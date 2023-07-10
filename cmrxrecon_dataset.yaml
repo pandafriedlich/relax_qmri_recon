@@ -1,0 +1,2 @@
+dataset_base: "/home/yidongzhao/umbrella/ConvertedData/CMRxRecon/ChallengeData"
+sliced_dataset_base: "/home/yidongzhao/wind/SyncData/CMRxRecon/ChallengeDataSliced"
