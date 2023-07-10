@@ -1,8 +1,11 @@
+import typing
 import numpy as np
 from typing import Tuple
 from direct.algorithms.mri_algorithms import EspiritCalibration
 from direct.data import transforms as direct_transform
 import torch
+from numbers import Number
+import joblib
 
 
 def ifft2(
@@ -110,4 +113,14 @@ def estimate_sensitivity_map(k_space: np.ndarray, mask: np.ndarray) -> np.ndarra
     sensitivity = np.array(sensitivity)
     sensitivity = np.transpose(sensitivity, (2, 3, 1, 0))
     return sensitivity
+
+
+def dumped_data_reader(dumped_file: typing.Tuple[Number, ...]) -> typing.Any:
+    """
+    Load prepared data with .dat suffix dumped by joblib.
+    :param dumped_file: path to the dumped file.
+    :return: Data in the file
+    """
+    data = joblib.load(dumped_file)
+    return data
 
