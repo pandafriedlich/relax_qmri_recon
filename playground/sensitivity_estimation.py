@@ -7,6 +7,7 @@ from pathlib import Path
 import mat73
 import torch
 from matplotlib import pyplot as plt
+from data.utils import estimate_sensitivity_map
 
 
 def get_acs_mask(mask: np.ndarray, half_bandwidth: int = 12) -> np.ndarray:
@@ -29,7 +30,7 @@ def get_acs_mask(mask: np.ndarray, half_bandwidth: int = 12) -> np.ndarray:
 _multi_coil = "MultiCoil"
 _task_type = "Mapping"
 _split = "TrainingSet"
-_acceleration = "AccFactor04"
+_acceleration = "FullSample"
 _subject_code = "P001"
 
 dataset_paths = yaml.load(Path("../cmrxrecon_dataset.yaml").open('r'),
@@ -47,35 +48,28 @@ def load_subject(base, filenames=('T1map', 'T1map_mask')):
     return data
 
 
-subject = load_subject(subject_base)
-y = subject['T1map'][..., 0, 1]                         # (kx, ky, nc)
-U = subject['T1map_mask']                               # (kx, ky)
+subject = load_subject(subject_base, filenames=('T1map', ))
+y = subject['T1map'][..., 0, :]                         # (kx, ky, nc)
+U = np.ones(y.shape[:2])
 Uacs = get_acs_mask(U)                                  # (kx, ky)
 
-y = np.transpose(y, (2, 0, 1))                       # (nc, kx, ky)
-
-y = torch.from_numpy(y).cuda()
-y = direct_transform.view_as_real(y)                    # (nc, kx, ky, 2)
-U = torch.from_numpy(U).cuda()
-Uacs = torch.from_numpy(Uacs).cuda()
-
-
-def backward_operator(*args, **kwargs):
-    kwargs['normalized'] = True
-    return direct_transform.ifft2(*args, **kwargs)
-
-
-sensitivity_estimator = EspiritCalibration(
-    threshold=0.05,
-    max_iter=100,
-    crop=0.9,
-    backward_operator=backward_operator
-)
-S = sensitivity_estimator.calculate_sensitivity_map(Uacs, y.clone())
+S = estimate_sensitivity_map(y, U)
+S = torch.from_numpy(S)
+S = direct_transform.view_as_real(S)
 S_H = direct_transform.conjugate(S)
+y = direct_transform.view_as_real(torch.from_numpy(y))
 x = direct_transform.complex_multiplication(
     S_H,
-    direct_transform.ifft2(y, dim=(1, 2),
+    direct_transform.ifft2(y, dim=(0, 1),
                            complex_input=True)
 )
-x = x.sum(dim=0)
+x = x.sum(dim=-3)
+
+I = x.detach().cpu().numpy()
+I = (I ** 2).sum(axis=-1) ** 0.5
+fig, ax = plt.subplots(dpi=200)
+ax.imshow(I[..., 0], cmap='gray')
+ax.set_aspect('equal')
+ax.axis('off')
+plt.show()
+plt.close()
