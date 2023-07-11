@@ -28,9 +28,9 @@ class ToTensor(object):
         for k in self.transform_keys:
             val = torch.from_numpy(sample[k])
             if k in ('acc_kspace', 'full_kspace', 'sensitivity'):
-                val = torch.permute(val, (3, 2, 0, 1))                  # After permutation: (nt, nc, kx, ky)
-            if k.endswith('_mask'):                                      # Masks are of shape (1, 1, kx, ky)
-                val = val[None, None,   ...]
+                val = torch.permute(val, (2, 0, 1, 3))                      # After permutation: (nc, kx, ky, nt)
+            if k.endswith('_mask'):                                         # Masks are of shape (1, kx, ky, 1)
+                val = val.unsqueeze(0).unsqueeze(-1)
             tensor_sample[k] = val
         return tensor_sample
 
@@ -43,6 +43,8 @@ class ViewAsRealTransform:
         """
         if keys is None:
             self.transform_keys = ('acc_kspace',
+                                   'us_mask',
+                                   'acs_mask',
                                    'full_kspace')
         else:
             self.transform_keys = keys
@@ -54,14 +56,17 @@ class ViewAsRealTransform:
         :return: converted data sample.
         """
         for key in self.transform_keys:
-            sample[key] = dtrans.view_as_real(sample[key])       # (..., kx, ky, 2)
+            if key.endswith('_mask'):
+                sample[key] = sample[key].unsqueeze(-1)
+            else:
+                sample[key] = dtrans.view_as_real(sample[key])       # (..., kx, ky, 2)
         return sample
 
 
 class EstimateSensitivityTransform:
     def __init__(self, estimation_type: str = 'rss_estimation',
-                 kx_ky_dim: typing.Tuple[int] = (2, 3),
-                 coil_dim: int = 1,
+                 kx_ky_dim: typing.Tuple[int] = (1, 2),
+                 coil_dim: int = 0,
                  complex_dim: int = 4):
         """
         Initializer.
@@ -82,9 +87,8 @@ class EstimateSensitivityTransform:
         :return: Sample dictionary with an additional key `sensitivity`.
         """
         if self.estimation_type == 'rss_estimation':
-            masked_kspace = sample["acc_kspace"]                    # (nt, nc, kx, ky, 2)
-            acs_mask = sample["acs_mask"]                           # (1, 1, kx, ky)
-            acs_mask = acs_mask.unsqueeze(self.complex_dim)         # (1, 1, kx, ky, 1)
+            masked_kspace = sample["acc_kspace"]                    # (nc, kx, ky, nt, 2)
+            acs_mask = sample["acs_mask"]                           # (1, kx, ky, 1, 1)
             acs_kspace = masked_kspace * acs_mask
             acs_image = dtrans.ifft2(
                 acs_kspace.float(),
@@ -92,16 +96,18 @@ class EstimateSensitivityTransform:
                 centered=True,
                 normalized=True,
                 complex_input=True
-            )                                          # (nt, nc, kx, ky, 2)
+            )                                                               # (nc, kx, ky, nt, 2)
             acs_image_rss = dtrans.root_sum_of_squares(acs_image,
-                                                      dim=self.coil_dim)    # (nt, kx, ky)
-            acs_image_rss = acs_image_rss[:, None, :, :, None]              # (nt, 1, kx, ky, 1)
-            sensitivity_map = dtrans.safe_divide(acs_image, acs_image_rss)  # (nt, nc, kx, ky, 2)
+                                                      dim=self.coil_dim)    # (kx, ky, nt)
+            acs_image_rss = (acs_image_rss
+                             .unsqueeze(self.coil_dim)
+                             .unsqueeze(self.complex_dim))                  # (1, kx, ky, nt, 1)
+            sensitivity_map = dtrans.safe_divide(acs_image, acs_image_rss)  # (nc, kx, ky, nt, 2)
             sensitivity_map_norm = torch.sqrt(
                 (sensitivity_map ** 2).sum(self.complex_dim).sum(self.coil_dim)
-            )                                                               # (nt, kx, ky)
-            sensitivity_map_norm = sensitivity_map_norm.unsqueeze(self.coil_dim).unsqueeze(self.complex_dim)    # (nt, 1, kx, ky, 1)
-            sensitivity_map = dtrans.safe_divide(sensitivity_map, sensitivity_map_norm)                         # (nt, nc, kx, ky, 2)
+            )                                                               # (kx, ky, nt)
+            sensitivity_map_norm = sensitivity_map_norm.unsqueeze(self.coil_dim).unsqueeze(self.complex_dim)    # (1, kx, ky, nt, 1)
+            sensitivity_map = dtrans.safe_divide(sensitivity_map, sensitivity_map_norm)                         # (nc, kx, ky, nt, 2)
             sample['sensitivity'] = sensitivity_map
         else:
             raise ValueError(f"Currently only `rss_estimation` is supported, got {self.estimation_type}!")
@@ -111,8 +117,8 @@ class EstimateSensitivityTransform:
 class NormalizeKSpaceTransform:
     def __init__(self, percentile: float = 0.99,
                  keys: typing.Union[None, typing.Tuple[str]] = None,
-                 kx_ky_dim: typing.Tuple[int] = (2, 3),
-                 coil_dim: int = 1,
+                 kx_ky_dim: typing.Tuple[int] = (1, 2),
+                 coil_dim: int = 0,
                  complex_dim: int = 4):
         """
         Initializer.
@@ -142,12 +148,12 @@ class NormalizeKSpaceTransform:
         :param sample: Data sample.
         :return: Normalized sample.
         """
-        masked_kspace = sample['acc_kspace']                                        # (nt, nc, kx, ky, 2)
+        masked_kspace = sample['acc_kspace']                                        # (nc, kx, ky, nt, 2)
         kspace_modulus = dtrans.modulus(masked_kspace,
-                                        complex_axis=self.complex_dim)              # (nt, nc, kx, ky)
-        kspace_modulus = kspace_modulus.flatten(*self.kx_ky_dim)
-        amax = torch.quantile(kspace_modulus, self.percentile, dim=-1)              # (nt, nc)
-        amax = amax[..., None, None, None]                                                   # (nt, nc, kx, ky, 2)
+                                        complex_axis=self.complex_dim)              # (nc, kx, ky, nt)
+        kspace_modulus = kspace_modulus.flatten(*self.kx_ky_dim)                    # (nc, kx * ky, nt)
+        amax = torch.quantile(kspace_modulus, self.percentile, dim=1)               # (nc, nt)
+        amax = amax[:, None, None, :, None]                                         # (nc, 1, 1, nt, 1)
         sample['scaling_factor'] = amax
         for key in self.transform_keys:
             sample[key] = dtrans.safe_divide(sample[key], amax)

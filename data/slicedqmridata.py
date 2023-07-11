@@ -119,7 +119,22 @@ class SlicedQuantitativeMRIDataset(torch.utils.data.Dataset):
                     )
         if self.transforms is not None:
             sample = self.transforms(sample)
-
         return sample
+
+
+def qmri_data_collate_fn(list_of_samples: typing.List[typing.Dict[str, typing.Any]]):
+    """
+    Customized collate function which stacks the samples along the batch axis (dim=0).
+    :param list_of_samples: List of samples
+    :return:
+    """
+    keys = list_of_samples[0].keys()
+    batch = dict()
+    for k in keys:
+        val = [sample[k] for sample in list_of_samples]
+        val = torch.stack(val, dim=0)
+        batch[k] = val
+    return batch
+
 
 
