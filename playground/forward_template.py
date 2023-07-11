@@ -32,7 +32,7 @@ sliced_dataset_files = SlicedQuantitativeMRIDatasetListSplit(sliced_multi_coil_m
                                                              modalities=('t1map',))
 
 # make splits
-splits = sliced_dataset_files.splits
+splits = sliced_dataset_files.split(k=5)
 training, validation = splits[0]['training'], splits[0]['validation']
 
 # transforms

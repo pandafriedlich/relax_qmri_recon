@@ -65,8 +65,7 @@ class SSIMLoss(nn.Module):
 
 
 class NuclearNormLoss(nn.Module):
-    def __init__(self, relax_dim: int = 3,
-                 spatial_dim: typing.Tuple[int] = (1, 2)):
+    def __init__(self, relax_dim: int = 3, spatial_dim: typing.Tuple[int] = (1, 2)):
         super().__init__()
         self.relax_dim = relax_dim
         self.spatial_dim = spatial_dim
