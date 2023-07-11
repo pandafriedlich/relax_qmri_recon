@@ -5,7 +5,12 @@ from direct.data.transforms import (complex_multiplication,
                                     modulus,
                                     conjugate,
                                     ifft2,
+                                    fft2,
                                     root_sum_of_squares)
+import direct.functionals as direct_func
+from models.loss import SSIMLoss, NuclearNormLoss
+from direct.nn.unet.unet_2d import UnetModel2d
+import models.utils as mutils
 from data.slicedqmridata import (SlicedQuantitativeMRIDatasetListSplit,
                                  SlicedQuantitativeMRIDataset,
                                  qmri_data_collate_fn)
@@ -17,6 +22,7 @@ from data.transforms import (ToTensor,
                              NormalizeKSpaceTransform
                              )
 from torchvision.transforms import Compose
+from models.recurrentvarnet import RecurrentVarNet
 
 # load dataset
 dataset_paths = CMRxReconDatasetPath("../cmrxrecon_dataset.yaml")
@@ -43,11 +49,70 @@ print("Number of training samples: ", len(training_set))
 training_loader = DataLoader(training_set, batch_size=2,
                              shuffle=True, num_workers=1,
                              collate_fn=qmri_data_collate_fn)
+
+# define a model
+model = RecurrentVarNet(
+    forward_operator=fft2,
+    backward_operator=ifft2,
+    in_channels=2 * 9,         # 2 for complex numbers, 9 for #baseline images
+    num_steps=4,
+    recurrent_num_layers=3,
+    recurrent_hidden_channels=96,
+    initializer_initialization='sense',
+    learned_initializer=True,
+    initializer_channels=[32, 32, 64, 64],
+    initializer_dilations=[1, 1, 2, 4],
+    initializer_multiscale=3
+).cuda().float()
+
+additional_model = UnetModel2d(
+    in_channels=2 * 9,
+    out_channels=2 * 9,
+    num_filters=8,
+    num_pool_layers=4,
+    dropout_probability=0.0
+).cuda().float()
+
+l2_loss = direct_func.nmse.NMSELoss()
+ssim_loss = SSIMLoss()
+nuc_loss = NuclearNormLoss(relax_dim=3, spatial_dim=(1, 2))
+
 for sample in training_loader:
     # Get a sample
-    y = sample['acc_kspace'][0]
-    S = sample['sensitivity'][0]
-    y_full = sample['full_kspace'][0]
+    y = sample['acc_kspace'].cuda().float()
+    U = sample['us_mask'].cuda().float()
+    S = sample['sensitivity'].cuda().float()
+    y_full = sample['full_kspace'].cuda().float()
+
+    Sref = mutils.refine_sensitivity_map(additional_model,
+                                         S, coil_dim=1, spatial_dim=(2, 3),
+                                         relax_dim=4, complex_dim=5)
+    y_pred = model(y, U, Sref)
+    x_gt = mutils.root_sum_of_square_recon(
+        y_full,
+        backward_operator=ifft2,
+        spatial_dim=(2, 3),
+        coil_dim=1
+    )
+    x_pred = mutils.root_sum_of_square_recon(
+        y_pred,
+        backward_operator=ifft2,
+        spatial_dim=(2, 3),
+        coil_dim=1
+    )
+    nuc = nuc_loss(x_pred)
+    l2 = l2_loss(x_gt, x_pred)
+    x_gt_flattened = x_gt.permute(0, 3, 1, 2).flatten(0, 1).unsqueeze(1)
+    x_pred_flattened = x_pred.permute(0, 3, 1, 2).flatten(0, 1).unsqueeze(1)
+    ssim = ssim_loss(x_pred_flattened,
+                     x_gt_flattened,
+                     torch.amax(x_gt_flattened, dim=(1, 2, 3)),
+                     reduced=True)
+
+    # visualize SENSE initialization
+    y = y[0]
+    S = S[0]
+    y_full = y_full[0]
 
     # get SENSE init recon
     S_conj = conjugate(S)  # (nc, kx, ky, kt, 2)
