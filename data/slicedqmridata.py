@@ -5,7 +5,7 @@ import typing
 import os
 from .qmridata import ACCELERATION_FOLDER_MAP
 from sklearn.model_selection import KFold
-from .utils import dumped_data_reader
+from .utils import dumped_data_reader, get_acs_mask
 from numbers import Number
 
 
@@ -75,17 +75,20 @@ class SlicedQuantitativeMRIDatasetListSplit:
 
 class SlicedQuantitativeMRIDataset(torch.utils.data.Dataset):
     def __init__(self, list_of_acc_files: typing.List[typing.Union[str, bytes, os.PathLike]],
-                 list_of_gt_files: typing.List[typing.Union[str, bytes, os.PathLike]]) -> None:
+                 list_of_gt_files: typing.List[typing.Union[str, bytes, os.PathLike]],
+                 transforms: typing.Optional[typing.Callable] = None) -> None:
         """
         Construct a dataset object.
         :param list_of_acc_files: List of acceleration data files.
         :param list_of_gt_files: List of ground truth data files.
+        :param transforms: Data transforms.
         """
         super(SlicedQuantitativeMRIDataset, self).__init__()
         self.list_of_acc_files = list_of_acc_files
         self.list_of_gt_files = list_of_gt_files
         assert len(self.list_of_acc_files) == len(self.list_of_gt_files), \
             "Acceleration files and GT files have mismatching lengths!"
+        self.transforms = transforms
 
     def __len__(self):
         return len(self.list_of_acc_files)
@@ -102,14 +105,21 @@ class SlicedQuantitativeMRIDataset(torch.utils.data.Dataset):
         acc_kspace = acc['kspace']
         acc_sensitivity = acc['senstivity']
         acc_under_sampling_mask = acc['us']
+        acs_mask = get_acs_mask(acc_under_sampling_mask, half_bandwidth=12)
 
         gt_kspace = gt['kspace']
         sos_recon = gt['sos']
-        return dict(tvec=tvec,
-                    acc_kspace=acc_kspace,
-                    us_mask=acc_under_sampling_mask,
-                    init_sensitivity=acc_sensitivity,
-                    gt_kspace=gt_kspace,
-                    gt_sos=sos_recon)
+        sample = dict(tvec=tvec,
+                    acc_kspace=acc_kspace,              # (kx, ky, nc, nt)
+                    us_mask=acc_under_sampling_mask,    # (kx, ky)
+                    acs_mask=acs_mask,                  # (kx, ky)
+                    init_sensitivity=acc_sensitivity,   # (kx, ky, nc, nt)
+                    full_kspace=gt_kspace,              # (kx, ky, nc, nt)
+                    full_sos=sos_recon                  # (kx, ky, nt)
+                    )
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+
+        return sample
 
 
