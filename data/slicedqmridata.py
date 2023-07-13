@@ -13,7 +13,7 @@ import hashlib
 
 class SlicedQuantitativeMRIDatasetListSplit:
     """
-    List all the files of
+    List all the files of the preprocessed (sliced) dataset.
     """
     def __init__(self, dataset_base: typing.Union[str, bytes, os.PathLike],
                  acceleration_factors: typing.Tuple[Number, ...],
@@ -87,6 +87,8 @@ class SlicedQuantitativeMRIDatasetListSplit:
                                                 [self.list_of_gt_files[ind] for ind in valid_indices]),
                                     )
                                )
+        split_files = {ind: sf for ind, sf in zip(range(k), split_files)}
+        split_files['all'] = [self.list_of_acc_files, self.list_of_gt_files]
         return split_files
 
 
