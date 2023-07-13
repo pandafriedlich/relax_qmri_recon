@@ -1,3 +1,4 @@
+import joblib
 import numpy as np
 import torch
 from pathlib import Path
@@ -7,6 +8,7 @@ from .qmridata import ACCELERATION_FOLDER_MAP
 from sklearn.model_selection import KFold
 from .utils import dumped_data_reader, get_acs_mask
 from numbers import Number
+import hashlib
 
 
 class SlicedQuantitativeMRIDatasetListSplit:
@@ -15,7 +17,8 @@ class SlicedQuantitativeMRIDatasetListSplit:
     """
     def __init__(self, dataset_base: typing.Union[str, bytes, os.PathLike],
                  acceleration_factors: typing.Tuple[Number, ...],
-                 modalities: typing.Tuple[str, ...]) -> None:
+                 modalities: typing.Tuple[str, ...],
+                 overwrite_split: bool = False) -> None:
         """
 
         Go through the dataset and get all the files.
@@ -26,6 +29,8 @@ class SlicedQuantitativeMRIDatasetListSplit:
         self.dataset_base = Path(dataset_base)
         self.acceleration_factors = acceleration_factors
         self.modalities = modalities
+        self.overwrite_split = overwrite_split
+
         assert all([m.lower() in ('t1map', 't2map') for m in self.modalities]),\
             f"Invalid modalities: {str(self.modalities)}! "
 
@@ -52,6 +57,18 @@ class SlicedQuantitativeMRIDatasetListSplit:
 
         assert len(self.list_of_acc_files) == len(self.list_of_gt_files), \
             "Acceleration files and GT files have mismatching lengths!"
+
+        # make splits
+        identifier = (self.modalities, self.acceleration_factors)
+        identifier = str(identifier).encode()
+        identifier = hashlib.sha1(identifier).hexdigest()
+        split_file_path = self.dataset_base / f"split_{identifier:s}.info"
+        if not split_file_path.exists() or self.overwrite_split:
+            # splits of file lists
+            self.splits = self.split()
+            joblib.dump(self.splits, split_file_path)
+        else:
+            self.splits = joblib.load(split_file_path)
 
     def split(self, k: int = 5) -> typing.List[dict]:
         """
@@ -103,19 +120,19 @@ class SlicedQuantitativeMRIDataset(torch.utils.data.Dataset):
         # relaxation time vector, can be 'ti' fit T1 mapping or 'te' for T2 mapping.
         tvec = acc['ti'] if ti_in_keys else acc['te']
         acc_kspace = acc['kspace']
-        acc_sensitivity = acc['senstivity']
+        # acc_sensitivity = acc['senstivity']
         acc_under_sampling_mask = acc['us']
         acs_mask = get_acs_mask(acc_under_sampling_mask, half_bandwidth=12)
 
         gt_kspace = gt['kspace']
-        sos_recon = gt['sos']
+        # sos_recon = gt['sos']
         sample = dict(tvec=tvec,
                     acc_kspace=acc_kspace,              # (kx, ky, nc, nt)
                     us_mask=acc_under_sampling_mask,    # (kx, ky)
                     acs_mask=acs_mask,                  # (kx, ky)
-                    init_sensitivity=acc_sensitivity,   # (kx, ky, nc, nt)
+                    # init_sensitivity=acc_sensitivity,   # (kx, ky, nc, nt)
                     full_kspace=gt_kspace,              # (kx, ky, nc, nt)
-                    full_sos=sos_recon                  # (kx, ky, nt)
+                    # full_sos=sos_recon                  # (kx, ky, nt)
                     )
         if self.transforms is not None:
             sample = self.transforms(sample)
