@@ -27,14 +27,27 @@ class CMRxReconDatasetPath:
         basis_paths = load_yaml_for_paths(self.yaml_file)
         self.dataset_base = Path(basis_paths['dataset_base'])
         self.sliced_dataset_base = Path(basis_paths['sliced_dataset_base'])
+        self.expr_dump_base = Path(basis_paths["expr_dump_base"])
+
+    @staticmethod
+    def _get_sub_folder_path(base: Path, *args: typing.List[str]) -> Path:
+        """
+        Get path to "base/args[0]/args[1]/...".
+        :param base: The base path.
+        :param args: Sub-folders as a list of strings.
+        :return: Path("base/args[0]/args[1]/...").
+        """
+        folder = '/'.join(args)
+        return base / folder
 
     def get_raw_data_path(self, *args: typing.List[str]):
-        folder = '/'.join(args)
-        return self.dataset_base / folder
+        return self._get_sub_folder_path(self.dataset_base, *args)
 
     def get_sliced_data_path(self, *args: typing.List[str]):
-        folder = '/'.join(args)
-        return self.sliced_dataset_base / folder
+        return self._get_sub_folder_path(self.sliced_dataset_base, *args)
+
+    def get_dump_data_path(self,*args: typing.List[str]):
+        return self._get_sub_folder_path(self.expr_dump_base, *args)
 
 
 
