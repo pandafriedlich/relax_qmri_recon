@@ -238,11 +238,11 @@ class QuantitativeMRITrainer(object):
                 self.global_step += 1
                 for k, l in loss_value_dict.items():
                     description_str += f'{k:s}: {l:.4f} '
-                    if self.global_step % self.tracker_config.save_training_loss_every > 0 or self.disable_tracker:
+                    if self.global_step % self.tracker_config.save_training_loss_every == 0 and (not self.disable_tracker):
                         self.training_tracker.add_scalar(f'loss/{k}', l.item(), self.global_step)
                 pbar.set_description(description_str)
 
-                if self.global_step % self.tracker_config.save_training_image_every > 0 or self.disable_tracker:
+                if self.global_step % self.tracker_config.save_training_image_every == 0 and (not self.disable_tracker):
                     grid_gt = make_grid(full_for_loss['rss_flattened'], nrow=9,
                                         normalize=True, scale_each=True)
                     grid_pred = make_grid(pred_for_loss['rss_flattened'], nrow=9,
