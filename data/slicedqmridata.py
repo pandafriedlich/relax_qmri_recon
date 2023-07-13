@@ -18,6 +18,7 @@ class SlicedQuantitativeMRIDatasetListSplit:
     def __init__(self, dataset_base: typing.Union[str, bytes, os.PathLike],
                  acceleration_factors: typing.Tuple[Number, ...],
                  modalities: typing.Tuple[str, ...],
+                 make_split: bool = True,
                  overwrite_split: bool = False) -> None:
         """
 
@@ -25,6 +26,8 @@ class SlicedQuantitativeMRIDatasetListSplit:
         :param dataset_base: Path to the dataset base like `.../TrainingSet`.
         :param acceleration_factors: The acceleration factors to be included.
         :param modalities: The modalities to be included, can be ('t1map', ), ('t2map', ) or ('t1map', 't2map')
+        :param make_split: If the dataset should be split.
+        :param overwrite_split: If the split info file should be overwritten (Make a new split of the dataset).
         """
         self.dataset_base = Path(dataset_base)
         self.acceleration_factors = acceleration_factors
@@ -59,16 +62,19 @@ class SlicedQuantitativeMRIDatasetListSplit:
             "Acceleration files and GT files have mismatching lengths!"
 
         # make splits
-        identifier = (self.modalities, self.acceleration_factors)
-        identifier = str(identifier).encode()
-        identifier = hashlib.sha1(identifier).hexdigest()
-        split_file_path = self.dataset_base / f"split_{identifier:s}.info"
-        if not split_file_path.exists() or self.overwrite_split:
-            # splits of file lists
-            self.splits = self.split()
-            joblib.dump(self.splits, split_file_path)
+        if make_split:
+            identifier = (self.modalities, self.acceleration_factors)
+            identifier = str(identifier).encode()
+            identifier = hashlib.sha1(identifier).hexdigest()
+            split_file_path = self.dataset_base / f"split_{identifier:s}.info"
+            if not split_file_path.exists() or self.overwrite_split:
+                # splits of file lists
+                self.splits = self.split()
+                joblib.dump(self.splits, split_file_path)
+            else:
+                self.splits = joblib.load(split_file_path)
         else:
-            self.splits = joblib.load(split_file_path)
+            self.splits = {'all': [self.list_of_acc_files, self.list_of_gt_files]}
 
     def split(self, k: int = 5) -> typing.List[dict]:
         """
