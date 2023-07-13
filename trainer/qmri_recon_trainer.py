@@ -21,6 +21,9 @@ from data.transforms import (ToTensor,
                              NormalizeKSpaceTransform
                              )
 from torchvision.transforms import Compose
+from configuration.config import (TrainerConfig,
+                                  ReconstructionBackboneConfig,
+                                  SensitivityRefinementModuleConfig)
 from models.recurrentvarnet import RecurrentVarNet
 from models.tricathlon import QuantitativeMRIReconstructionNet
 from torch.utils.tensorboard import SummaryWriter
@@ -146,7 +149,12 @@ class QuantitativeMRITrainer(object):
         # 5. tensorboard/weight&bias, whatever...
         self.training_tracker = SummaryWriter(self.model_log_base)
 
-    def train(self) -> None:
+    def train(self, restore_latest: bool = True) -> None:
+        """
+        The training routine, loading data, forward pass, loss computation and backward.
+        :param restore_latest: If the latest checkpoint should be restored.
+        :return:
+        """
         self.recon_model.cuda().float()
         self.recon_model.train()
         n_steps_per_epoch = len(self.training_loader)

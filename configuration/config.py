@@ -1,5 +1,6 @@
 import typing
 import dataclasses
+import os
 
 
 @dataclasses.dataclass
@@ -45,8 +46,15 @@ class TrainerConfig:
     save_checkpoint_every: int = 10
     save_optimizer_factor: int = 2
     validation_every: int = 10
-
-    # https://stackoverflow.com/questions/52063759/passing-default-list-argument-to-dataclasses
+    load_pretrained_weight: typing.Union[str, bytes, os.PathLike] = None
+    load_pretrained_latest: bool = False
     combined_loss_weight: typing.Dict[str, float] = \
-        dataclasses.field(default_factory=lambda: {"nmse": 1., "ssim": 1.})
+        dataclasses.field(default_factory=
+                          lambda: {"nmse": 1., "ssim": 1.})
+
+
+@dataclasses.dataclass
+class TrainingTrackingConfig:
+    save_training_loss_every: int = 10            # in steps not epochs
+    save_training_image_every: int = 500          # in steps not epochs
 
