@@ -5,10 +5,10 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 import typing
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import direct.functionals as direct_func
 
 
 class SSIMLoss(nn.Module):
@@ -38,7 +38,6 @@ class SSIMLoss(nn.Module):
         reduced: bool = True,
     ):
         assert isinstance(self.w, torch.Tensor)
-
         data_range = data_range[:, None, None, None]
         C1 = (self.k1 * data_range) ** 2
         C2 = (self.k2 * data_range) ** 2
@@ -66,7 +65,8 @@ class SSIMLoss(nn.Module):
 
 
 class NuclearNormLoss(nn.Module):
-    def __init__(self, relax_dim: int = 3, spatial_dim: typing.Tuple[int] = (1, 2)):
+    def __init__(self, relax_dim: int = 3,
+                 spatial_dim: typing.Tuple[int] = (1, 2)):
         super().__init__()
         self.relax_dim = relax_dim
         self.spatial_dim = spatial_dim

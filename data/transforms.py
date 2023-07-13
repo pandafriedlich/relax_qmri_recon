@@ -159,5 +159,3 @@ class NormalizeKSpaceTransform:
             sample[key] = dtrans.safe_divide(sample[key], amax)
         return sample
 
-
-

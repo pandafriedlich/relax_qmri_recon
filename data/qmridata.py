@@ -77,10 +77,10 @@ class QuantitativeMappingSubjectData(SubjectData):
                                                         acceleration_factor=self.acceleration_factor)
         self.t1_map_t_inv = QuantitativeMappingSubjectData._load_inversion_time_csv(self.subject_base / "T1map.csv")
         self.t2_map_t_echo = QuantitativeMappingSubjectData._load_echo_time_csv(self.subject_base / "T2map.csv")
-        self.t1_sos_recon = None
-        self.t2_sos_recon = None
-        self.t1_sensitivity = None
-        self.t2_sensitivity = None
+        # self.t1_sos_recon = None
+        # self.t2_sos_recon = None
+        # self.t1_sensitivity = None
+        # self.t2_sensitivity = None
         self.t1_us_mask = None
         self.t2_us_mask = None
 
@@ -91,21 +91,22 @@ class QuantitativeMappingSubjectData(SubjectData):
             self.t2_us_mask = QuantitativeMappingSubjectData._load_under_sampling_mask(
                 self.subject_base / "T2map_mask.mat", self.acceleration_factor)
             # estimate t1-sensitivity-map
-            sensitivity = np.stack([estimate_sensitivity_map(self.t1_map_kspace[..., j, :],
-                                   self.t1_us_mask) for j in range(self.t1_map_kspace.shape[-2])],
-                                   axis=-2)
-            self.t1_sensitivity = sensitivity
+            # sensitivity = np.stack([estimate_sensitivity_map(self.t1_map_kspace[..., j, :],
+            #                        self.t1_us_mask) for j in range(self.t1_map_kspace.shape[-2])],
+            #                        axis=-2)
+            # self.t1_sensitivity = sensitivity
 
             # estimate t2-sensitivity-map
-            sensitivity = np.stack([estimate_sensitivity_map(self.t2_map_kspace[..., j, :],
-                                   self.t2_us_mask) for j in range(self.t2_map_kspace.shape[-2])],
-                                   axis=-2)
-            self.t2_sensitivity = sensitivity
+            # sensitivity = np.stack([estimate_sensitivity_map(self.t2_map_kspace[..., j, :],
+            #                        self.t2_us_mask) for j in range(self.t2_map_kspace.shape[-2])],
+            #                        axis=-2)
+            # self.t2_sensitivity = sensitivity
         else:
-            self.t1_sos_recon = SoS_Reconstruction(self.t1_map_kspace, fft_dim=(0, 1), coil_dim=2,
-                                                   complex_input=False, centered=True, normalized=True)
-            self.t2_sos_recon = SoS_Reconstruction(self.t2_map_kspace, fft_dim=(0, 1), coil_dim=2,
-                                                   complex_input=False, centered=True, normalized=True)
+            pass
+            # self.t1_sos_recon = SoS_Reconstruction(self.t1_map_kspace, fft_dim=(0, 1), coil_dim=2,
+            #                                        complex_input=False, centered=True, normalized=True)
+            # self.t2_sos_recon = SoS_Reconstruction(self.t2_map_kspace, fft_dim=(0, 1), coil_dim=2,
+            #                                        complex_input=False, centered=True, normalized=True)
 
     def slicing(self) -> dict:
         """
@@ -116,14 +117,14 @@ class QuantitativeMappingSubjectData(SubjectData):
         n_slices_t2 = self.t2_map_kspace.shape[-2]
         t1 = [dict(ti=self.t1_map_t_inv[j, :] if self.t1_map_t_inv.size >= 9 else None,
                    kspace=self.t1_map_kspace[..., j, :],
-                   senstivity=self.t1_sensitivity[..., j, :] if self.acceleration_factor > 1. else None,
-                   sos=None if self.acceleration_factor > 1. else self.t1_sos_recon[..., j, :],
+                   # senstivity=self.t1_sensitivity[..., j, :] if self.acceleration_factor > 1. else None,
+                   # sos=None if self.acceleration_factor > 1. else self.t1_sos_recon[..., j, :],
                    us=self.t1_us_mask)
               for j in range(n_slices_t1)]
         t2 = [dict(te=self.t2_map_t_echo,
                    kspace=self.t2_map_kspace[..., j, :],
-                   senstivity=self.t2_sensitivity[..., j, :] if self.acceleration_factor > 1. else None,
-                   sos=None if self.acceleration_factor > 1. else self.t2_sos_recon[..., j, :],
+                   # senstivity=self.t2_sensitivity[..., j, :] if self.acceleration_factor > 1. else None,
+                   # sos=None if self.acceleration_factor > 1. else self.t2_sos_recon[..., j, :],
                    us=self.t2_us_mask)
               for j in range(n_slices_t2)]
         return dict(t1=t1, t2=t2)
