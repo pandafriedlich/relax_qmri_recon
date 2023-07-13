@@ -1,3 +1,4 @@
+import typing
 import torch
 import tqdm
 from torch.utils.data import DataLoader
@@ -15,89 +16,102 @@ from data.slicedqmridata import (SlicedQuantitativeMRIDatasetListSplit,
                                  SlicedQuantitativeMRIDataset,
                                  qmri_data_collate_fn)
 from data.paths import CMRxReconDatasetPath
-from data.transforms import (ToTensor,
-                             ViewAsRealTransform,
-                             EstimateSensitivityTransform,
-                             NormalizeKSpaceTransform
-                             )
-from torchvision.transforms import Compose
+from data.transforms import get_default_sliced_qmr_transform
 from configuration.config import (TrainerConfig,
                                   ReconstructionBackboneConfig,
-                                  SensitivityRefinementModuleConfig)
+                                  SensitivityRefinementModuleConfig,
+                                  DataSetConfiguration,
+                                  TrainingTrackingConfig)
 from models.recurrentvarnet import RecurrentVarNet
 from models.tricathlon import QuantitativeMRIReconstructionNet
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
+from dataclasses import asdict
 
 
 class QuantitativeMRITrainer(object):
-    def __init__(self):
+    def __init__(self, path_handler: CMRxReconDatasetPath,
+                 split: int = 0,
+                 disable_tracker: int = 0,
+                 recon_config: typing.Optional[ReconstructionBackboneConfig] = None,
+                 ser_config: typing.Optional[SensitivityRefinementModuleConfig] = None,
+                 data_set_config: typing.Optional[DataSetConfiguration] = None,
+                 training_config: typing.Optional[TrainerConfig] = None,
+                 tracker_config: typing.Optional[TrainingTrackingConfig] = None
+                 ) -> None:
         """
-        TODO: make trainer configurable
+        Initialize the training object.
+        :param path_handler: Dataset path handler object, with which we can get raw/prepared dataset paths and training dump base paths.
+        :param split: Dataset split, integer number in [0, 5) for 5-fold cross validation.
+        :param disable_tracker: Disable the training tracker.
+        :param recon_config: Reconstruction network configuration, currently only RecurrentVarNet is supported.
+        :param ser_config: Sensitivity estimation network configuration, currently only U-Net 2D is supported.
+        :param data_set_config: Dataset loading configuration with attributes acceleration_factors and modality.
+        :param training_config: Training configuration file.
+        :param tracker_config: Tracker configuration file.
         """
+        self.split: int = split
+        self.disable_tracker: int = disable_tracker
+        self.path_handler = path_handler
+
         # Configurable variables
-        self.split = 0
-        self.acceleration_factors = (4., 8., 10.)
-        self.modality = ('t1map', )
-        self.baseline_images = dict(t1map=9, t2map=3)[self.modality]
-        self.batch_size = 2
-        self.loader_num_workers = 8
-        self.weight_decay = 0.
-        self.lr_decay = 0.9
-        self.lr_init = 1e-3
-        self.max_epochs = 1000
-        self.combined_loss_weight = dict(nmse=1., ssim=1.)
-        self.run_name = 'dryrun'
-        self.epoch = 0
-        self.save_every = 10
-        self.global_step = 0
+        self.recon_model_config = ReconstructionBackboneConfig() if recon_config is None else recon_config
+        self.sensitivity_model_config = SensitivityRefinementModuleConfig() if ser_config is None else ser_config
+        self.training_config = TrainerConfig() if training_config is None else training_config
+        self.tracker_config = TrainingTrackingConfig() if tracker_config is None else tracker_config
+        self.dataset_config = DataSetConfiguration() if training_config is None else data_set_config
 
         # 1. load data set, we load the related paths from YAML, and then create the split dataset
-        path_yaml_file = "../cmrxrecon_dataset.yaml"
-        dataset_path = CMRxReconDatasetPath(path_yaml_file)
         coil_type = "MultiCoil"
-        training_set_base = dataset_path.get_sliced_data_path(coil_type,
-                                                              "Mapping",
-                                                              "TrainingSet")
+        training_set_base = self.path_handler.get_sliced_data_path(coil_type,
+                                                                   "Mapping",
+                                                                   "TrainingSet")
         sliced_dataset_files = SlicedQuantitativeMRIDatasetListSplit(training_set_base,
-                                                                     acceleration_factors=self.acceleration_factors,
-                                                                     modalities=self.modality)
+                                                                     acceleration_factors=self.dataset_config.acceleration_factors,
+                                                                     modalities=self.dataset_config.modality,
+                                                                     make_split=True,
+                                                                     overwrite_split=False)
+
         # Now we have the list of file paths.
         file_lists_dict = sliced_dataset_files.splits[self.split]
         self.training_file_lists = file_lists_dict['training']
         self.validation_file_lists = file_lists_dict['validation']
 
         # set up transforms to be performed on the raw data, create Dataset & DataLoader.
-        transforms = Compose([ToTensor(keys=('acc_kspace', 'us_mask', 'acs_mask', 'full_kspace')),
-                              ViewAsRealTransform(keys=('acc_kspace', 'us_mask', 'acs_mask', 'full_kspace')),
-                              EstimateSensitivityTransform(),
-                              NormalizeKSpaceTransform(keys=('acc_kspace', 'full_kspace'))
-                              ])
+        transforms = get_default_sliced_qmr_transform()
         self.training_set = SlicedQuantitativeMRIDataset(*self.training_file_lists,
                                                          transforms=transforms)
         self.validation_set = SlicedQuantitativeMRIDataset(*self.validation_file_lists,
                                                            transforms=transforms)
         self.training_loader = DataLoader(self.training_set,
-                                          batch_size=self.batch_size,
+                                          batch_size=self.training_config.batch_size,
                                           shuffle=True,
-                                          num_workers=self.loader_num_workers,
+                                          num_workers=self.training_config.dataloader_num_workers,
                                           pin_memory=True,
                                           collate_fn=qmri_data_collate_fn)
         self.validation_loader = DataLoader(self.validation_set,
-                                            batch_size=self.batch_size,
+                                            batch_size=self.training_config.batch_size,
                                             shuffle=False,
-                                            num_workers=self.loader_num_workers,
+                                            num_workers=self.training_config.dataloader_num_workers,
                                             pin_memory=True,
                                             collate_fn=qmri_data_collate_fn
                                             )
 
         # 2. set-up models
+        recon_model_config = asdict(self.recon_model_config)
+        _supported_operators = {
+            'fft2': fft2,
+            'ifft2': ifft2
+        }
+        recon_model_config['forward_operator'] = _supported_operators[recon_model_config['forward_operator']]
+        recon_model_config['backward_operator'] = _supported_operators[recon_model_config['backward_operator']]
+
         model = RecurrentVarNet(
             forward_operator=fft2,
             backward_operator=ifft2,
-            in_channels=2 * self.baseline_images,
-            num_steps=4,
-            recurrent_num_layers=3,
+            in_channels=self.recon_model_config.in_channels,
+            num_steps=self.recon_model_config.num_steps,
+            recurrent_num_layers=self.recon_model_config.recurrent_num_layers,
             recurrent_hidden_channels=96,
             initializer_initialization='sense',
             learned_initializer=True,
@@ -107,11 +121,11 @@ class QuantitativeMRITrainer(object):
         ).cuda().float()
 
         additional_model = UnetModel2d(
-            in_channels=2 * self.baseline_images,
-            out_channels=2 * self.baseline_images,
-            num_filters=8,
-            num_pool_layers=4,
-            dropout_probability=0.0
+            in_channels=self.sensitivity_model_config.in_channels,
+            out_channels=self.sensitivity_model_config.out_channels,
+            num_filters=self.sensitivity_model_config.num_filters,
+            num_pool_layers=self.sensitivity_model_config.num_pool_layers,
+            dropout_probability=self.sensitivity_model_config.dropout_probability
         ).cuda().float()
         self.recon_model = QuantitativeMRIReconstructionNet(model,
                                                             additional_model)
