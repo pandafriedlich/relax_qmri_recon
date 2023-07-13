@@ -106,3 +106,60 @@ def refine_sensitivity_map(model: torch.nn.Module,
                                        complex_dim=complex_dim)
     return output
 
+
+def kaiming_init_model(model: torch.nn.Module) -> torch.nn.Module:
+    """
+    Model initialization with Kaiming init.
+    :param model: Model to be initialized.
+    :return: The initialized model.
+    """
+    def _kaiming_normal_init(m):
+        if isinstance(m, (torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Linear)):
+            torch.nn.init.kaiming_normal_(m.weight.data, a=1e-2)
+            if m.bias is not None:
+                torch.nn.init.zeros_(m.bias.data)
+    model = model.apply(_kaiming_normal_init)
+    return model
+
+
+def get_rearranged_prediction(data: typing.Dict[str, typing.Any],
+                              kspace_key: str,
+                              backward_operator: typing.Optional[typing.Callable] = dtrans.ifft2,
+                              spatial_dim: typing.Tuple[int] = (2, 3),
+                              coil_dim: int = 1,
+                              relax_dim: typing.Optional[int] = 4
+                              ) -> typing.Dict[str, typing.Any]:
+    """
+    Extend the data dictionary by an RSS estimation of magnitude image data['rss'] and its flattend version data['rss_flattened'] if applicable.
+
+    :param data: dictionary which contains a key `kspace_key`.
+    :param kspace_key: The key to retrive k-space data.
+    :param backward_operator: Inverse FT operator.
+    :param coil_dim: coil dimension.
+    :param spatial_dim: spatial dimension (kx, ky).
+    :param relax_dim: The relaxation dimension, default is 4.
+
+    :return: Expanded data.
+    """
+    k_space = data[kspace_key]                                              # (nb, nc, kx, ky, [nt], 2)
+    rss = root_sum_of_square_recon(k_space,
+                                   backward_operator=backward_operator,
+                                   spatial_dim=spatial_dim,
+                                   coil_dim=coil_dim, complex_dim=-1)       # (nb, kx, ky, [nt])
+
+    # flatten if applicable
+    if relax_dim is not None:
+        k_space_dim = list(range(k_space.ndim))
+        for dim in (coil_dim, k_space.ndim - 1):
+            k_space_dim.remove(dim)                                                         # coil_dim and complex_dim (-1) vanish after RSS
+        new_kspace_dim = sorted(range(len(k_space_dim)), key=k_space_dim.__getitem__)              # argsort
+        old_to_new = {rd: nrd for rd, nrd in zip(k_space_dim, new_kspace_dim)}
+        new_relax_dim = old_to_new[relax_dim]
+        rss_flattened = (torch.movedim(rss, new_relax_dim, 1)
+                        .flatten(0, 1).unsqueeze(1))
+    else:
+        rss_flattened = rss.unsqueeze(1)
+
+    data['rss'] = rss
+    data['rss_flattened'] = rss_flattened
+    return data

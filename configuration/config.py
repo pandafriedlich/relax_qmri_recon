@@ -11,7 +11,8 @@ class BasicConfig:
         :return:
         """
         for key, value in new.items():
-            setattr(key, value)
+            setattr(self, key, value)
+        return self
 
 
 @dataclasses.dataclass

@@ -2,6 +2,7 @@ import torch
 from direct.data import transforms as dtrans
 from direct.data import mri_transforms as mtrans
 import typing
+from torchvision.transforms import Compose
 
 
 class ToTensor(object):
@@ -159,3 +160,15 @@ class NormalizeKSpaceTransform:
             sample[key] = dtrans.safe_divide(sample[key], amax)
         return sample
 
+
+def get_default_sliced_qmr_transform():
+    """
+    Get default compose transform for sliced QMRI data.
+    :return: Composed transform.
+    """
+    transforms = Compose([ToTensor(keys=('acc_kspace', 'us_mask', 'acs_mask', 'full_kspace')),
+                          ViewAsRealTransform(keys=('acc_kspace', 'us_mask', 'acs_mask', 'full_kspace')),
+                          EstimateSensitivityTransform(),
+                          NormalizeKSpaceTransform(keys=('acc_kspace', 'full_kspace'))
+                          ])
+    return transforms
