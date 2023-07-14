@@ -214,7 +214,8 @@ class QuantitativeMRITrainer(object):
         n_steps_per_epoch = len(self.training_loader)
         self.global_step = self.epoch * n_steps_per_epoch
 
-        for epoch in range(self.epoch, self.training_config.max_epochs):
+        epoch_start = self.epoch
+        for self.epoch in range(epoch_start, self.training_config.max_epochs):
             pbar = tqdm.tqdm(self.training_loader)
             for ind, batch in enumerate(pbar):
                 self.optimizer.zero_grad()
@@ -299,6 +300,7 @@ class QuantitativeMRITrainer(object):
         validation_losses['total'] = []
         pbar = tqdm.tqdm(self.validation_loader)
         for ind, batch in enumerate(pbar):
+            pbar.set_description(f"Epoch: {self.epoch + 1} ")
             prediction = self.recon_model(batch)
 
             # convert k-space to RSS image
