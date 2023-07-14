@@ -8,7 +8,7 @@ from trainer.qmri_recon_trainer import QuantitativeMRITrainer
 from data.paths import CMRxReconDatasetPath
 
 dataset_path_yaml = "../yamls/cmrxrecon_dataset.yaml"
-training_config_yaml = "../yamls/all_acc_t1_5_fold.yaml"
+training_config_yaml = "../yamls/all_acc_t2_5_fold.yaml"
 
 # get datapath handler
 data_path_handler = CMRxReconDatasetPath(dataset_path_yaml)

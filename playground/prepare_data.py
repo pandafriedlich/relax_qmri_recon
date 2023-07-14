@@ -2,7 +2,7 @@ from data.qmridata import CMRxReconQuantitativeRawDataset
 from data.paths import CMRxReconDatasetPath
 
 # load dataset
-dataset_paths = CMRxReconDatasetPath("../cmrxrecon_dataset.yaml")
+dataset_paths = CMRxReconDatasetPath("../yamls/cmrxrecon_dataset.yaml")
 multi_coil_mapping_training = dataset_paths.get_raw_data_path("MultiCoil", "Mapping", "TrainingSet")
 sliced_multi_coil_mapping_training = dataset_paths.get_sliced_data_path("MultiCoil", "Mapping", "TrainingSet")
 
