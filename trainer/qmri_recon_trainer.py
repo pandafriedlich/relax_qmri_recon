@@ -337,6 +337,7 @@ class QuantitativeMRITrainer(object):
         """
         state_dict = torch.load(checkpoint)
         self.epoch = state_dict['epoch'] + 1        # next epoch
+        self.global_step = state_dict['epoch'] * self.training_steps_per_epoch
         self.recon_model.load_state_dict(state_dict['model'])
         optim_sd = state_dict.get('optimizer', None)
         sched_sd = state_dict.get('scheduler', None)
