@@ -1,5 +1,5 @@
-run_name: all_acc_t1_cross_valid_5
-description: "This training routine uses the T1map data with all acceleration factors with 5-fold cross validation."
+run_name: all_acc_t2_cross_valid_5
+description: "This training routine uses the T2map data with all acceleration factors with 5-fold cross validation."
 
 recon_backbone_config:
   forward_operator: fft2
