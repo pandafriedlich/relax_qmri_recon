@@ -76,14 +76,21 @@ class SlicedQuantitativeMRIDatasetListSplit:
                 # translate
                 for split_key in self.splits.keys():
                     split = self.splits[split_key]
-                    split_training = split['training']
-                    split_validation = split['validation']
+                    if split_key == 'all':
+                        split_training = split
+                        split_validation = [[], []]
+                    else:
+                        split_training = split['training']
+                        split_validation = split['validation']
                     split_training = ([self.dataset_base / p.relative_to(p.parents[3]) for p in split_training[0]],
                                       [self.dataset_base / p.relative_to(p.parents[3]) for p in split_training[1]])
                     split_validation = ([self.dataset_base / p.relative_to(p.parents[3]) for p in split_validation[0]],
                                         [self.dataset_base / p.relative_to(p.parents[3]) for p in split_validation[1]])
-                    split['training'] = split_training
-                    split['validation'] = split_validation
+                    if split_key == 'all':
+                        split = split_training
+                    else:
+                        split['training'] = split_training
+                        split['validation'] = split_validation
                     self.splits[split_key] = split
         else:
             self.splits = {'all': [self.list_of_acc_files, self.list_of_gt_files]}
