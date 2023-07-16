@@ -28,7 +28,12 @@ from data.paths import CMRxReconDatasetPath
               required=True,
               type=str,
               help='Path to the running configuration file')
-def train(split, dataset_config_path, running_config_path):
+@click.option('--disable-tqdm',
+              'disable_tqdm',
+              is_flag=True,
+              default=False,
+              help="Disable tqdm, you may want to do this when redirecting stdout to a file.")
+def train(split, dataset_config_path, running_config_path, disable_tqdm):
     """The main function for training with command line interface."""
     # get datapath handler
     data_path_handler = CMRxReconDatasetPath(dataset_config_path)
@@ -56,6 +61,7 @@ def train(split, dataset_config_path, running_config_path):
                                      path_handler=data_path_handler,
                                      split=split,
                                      disable_tracker=False,
+                                     disable_tqdm=disable_tqdm,
                                      recon_config=recon_config,
                                      ser_config=ser_config,
                                      data_set_config=dataset_config,
