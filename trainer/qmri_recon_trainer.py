@@ -35,6 +35,7 @@ class QuantitativeMRITrainer(object):
     def __init__(self, run_name: str, path_handler: CMRxReconDatasetPath,
                  split: int = 0,
                  disable_tracker: bool = False,
+                 disable_tqdm: bool = True,
                  recon_config: typing.Optional[ReconstructionBackboneConfig] = None,
                  ser_config: typing.Optional[SensitivityRefinementModuleConfig] = None,
                  data_set_config: typing.Optional[DataSetConfiguration] = None,
@@ -47,6 +48,7 @@ class QuantitativeMRITrainer(object):
         :param path_handler: Dataset path handler object, with which we can get raw/prepared dataset paths and training dump base paths.
         :param split: Dataset split, integer number in [0, 5) for 5-fold cross validation.
         :param disable_tracker: Disable the training tracker.
+        :param disable_tqdm: Disable the tqdm output.
         :param recon_config: Reconstruction network configuration, currently only RecurrentVarNet is supported.
         :param ser_config: Sensitivity estimation network configuration, currently only U-Net 2D is supported.
         :param data_set_config: Dataset loading configuration with attributes acceleration_factors and modality.
@@ -55,7 +57,8 @@ class QuantitativeMRITrainer(object):
         """
         self.run_name = run_name
         self.split: int = split
-        self.disable_tracker: int = disable_tracker
+        self.disable_tracker: bool = disable_tracker
+        self.disable_tqdm: bool = disable_tqdm
         self.path_handler = path_handler
 
         # Configurable variables
@@ -216,7 +219,7 @@ class QuantitativeMRITrainer(object):
 
         epoch_start = self.epoch
         for self.epoch in range(epoch_start, self.training_config.max_epochs):
-            pbar = tqdm.tqdm(self.training_loader)
+            pbar = tqdm.tqdm(self.training_loader, disable=self.disable_tqdm)
             for ind, batch in enumerate(pbar):
                 self.optimizer.zero_grad()
                 # forward pass
@@ -298,7 +301,7 @@ class QuantitativeMRITrainer(object):
         self.recon_model.eval()
         validation_losses = {k: [] for k in self.training_config.combined_loss_weight.keys()}
         validation_losses['total'] = []
-        pbar = tqdm.tqdm(self.validation_loader)
+        pbar = tqdm.tqdm(self.validation_loader, disable=self.disable_tqdm)
         for ind, batch in enumerate(pbar):
             pbar.set_description(f"Epoch: {self.epoch + 1} ")
             prediction = self.recon_model(batch)
