@@ -1,3 +1,4 @@
 dataset_base: "/home/yidongzhao/umbrella/ConvertedData/CMRxRecon/ChallengeData"
-sliced_dataset_base: "/home/yidongzhao/scratch/datasets/CMRxRecon/ChallengeDataSliced"
-expr_dump_base: "/home/yidongzhao/scratch/experiments_data/cmrxrecon"
+sliced_dataset_base: "/home/yidongzhao/barrel/Data/ConvertedData/CMRxRecon/ChallengeDataSliced"
+expr_dump_base: "/home/yidongzhao/umbrella/experiments_data/cmrxrecon"
+
