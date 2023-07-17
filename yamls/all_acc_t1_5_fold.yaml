@@ -53,7 +53,7 @@ training_tracking_config:
   save_training_image_every: 500
 
 post_training_validation_config:
-  swa: true
+  swa: false
   swa_overwrite: false
   swa_epoch_start: 150
   swa_epoch_end: 200
