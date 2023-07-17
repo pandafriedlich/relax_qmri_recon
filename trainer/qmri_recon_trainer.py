@@ -352,3 +352,52 @@ class QuantitativeMRITrainer(object):
     def resume_latest(self) -> None:
         checkpoint = self.model_dump_base / "model_latest.model"
         self.resume_from_checkpoint(checkpoint)
+
+    def stochastic_weight_averaging(self, epoch_start: int,
+                                    epoch_end: int,
+                                    update_bn_steps: int = 100) -> None:
+        """
+        Perform stochastic weight averaging (SWA) in the weight space. SWA can counteract the randomness introduced by stochastic gradient descent.
+        :param epoch_start: The first epoch number for SWA.
+        :param epoch_end: The last ending epoch number for SWA.
+        :param update_bn_steps: Steps of forward passes for batch normalization buffer update.
+        :return: None
+        """
+        weight_aver = dict()                                        # initialize the averaged weight.
+        num_models_average: float = 0.                              # keep track of number of models that have been averaged.
+        epoch_numbers_averaged = []                                 # keep track of epoch numbers that have been averaged.
+
+        # weight space averaging
+        for epoch in range(epoch_start, epoch_end):
+            filename = f"model_{epoch:04d}.model"
+            filepath = self.model_dump_base / filename              # go through all the checkpoints
+            if filepath.exists():
+                weight_t = torch.load(filepath)['model']
+                for key, w_t in weight_t.items():
+                    # SWA: w_aver[t] = w_aver[t-1] * n / (n + 1) + w_t / (n + 1)
+                    w_aver_t_prev = weight_aver.get(key, 0.)
+                    w_aver_t = w_aver_t_prev * num_models_average / (num_models_average + 1.) + w_t / (num_models_average + 1.)
+                    weight_aver[key] = w_aver_t
+                num_models_average += 1.
+                epoch_numbers_averaged.append(epoch)
+
+        # update normalization layers for a few steps
+        self.recon_model.load_state_dict(weight_aver)
+        self.recon_model.train()
+        if update_bn_steps > 0:
+            for ind, batch in self.training_loader:
+                self.recon_model(batch)
+                if ind >= (update_bn_steps - 1):
+                    break
+
+        # save swa weights
+        state_dict_swa = dict(
+            num_models_average=num_models_average,
+            epoch_start=epoch_start,
+            epoch_end=epoch_end,
+            epoch_numbers_averaged=epoch_numbers_averaged,
+            model=self.recon_model.state_dict()
+        )
+        filename = f"model_swa_{epoch_start:04d}_{epoch_end:04d}.model"
+        torch.save(state_dict_swa,
+                   self.model_dump_base / filename)
