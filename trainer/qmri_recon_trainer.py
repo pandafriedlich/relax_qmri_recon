@@ -368,8 +368,9 @@ class QuantitativeMRITrainer(object):
         epoch_numbers_averaged = []                                 # keep track of epoch numbers that have been averaged.
 
         # weight space averaging
-        for epoch in range(epoch_start, epoch_end):
-            filename = f"model_{epoch:04d}.model"
+        pbar = tqdm.tqdm(range(epoch_start, epoch_end), disable=self.disable_tqdm)
+        for epoch in pbar:
+            filename = f"epoch_{epoch:04d}.model"
             filepath = self.model_dump_base / filename              # go through all the checkpoints
             if filepath.exists():
                 weight_t = torch.load(filepath)['model']
@@ -380,12 +381,17 @@ class QuantitativeMRITrainer(object):
                     weight_aver[key] = w_aver_t
                 num_models_average += 1.
                 epoch_numbers_averaged.append(epoch)
+                pbar.set_description(f"Processing {epoch:4d}.")
+            else:
+                pbar.set_description(f"Checkpoint {epoch:4d} not found!")
 
         # update normalization layers for a few steps
         self.recon_model.load_state_dict(weight_aver)
         self.recon_model.train()
         if update_bn_steps > 0:
-            for ind, batch in self.training_loader:
+            pbar = tqdm.tqdm(self.training_loader, disable=self.disable_tqdm)
+            for ind, batch in enumerate(pbar):
+                pbar.set_description("Updating normalization layers ...")
                 self.recon_model(batch)
                 if ind >= (update_bn_steps - 1):
                     break
@@ -394,10 +400,11 @@ class QuantitativeMRITrainer(object):
         state_dict_swa = dict(
             num_models_average=num_models_average,
             epoch_start=epoch_start,
+            update_bn_steps=update_bn_steps,
             epoch_end=epoch_end,
             epoch_numbers_averaged=epoch_numbers_averaged,
             model=self.recon_model.state_dict()
         )
-        filename = f"model_swa_{epoch_start:04d}_{epoch_end:04d}.model"
+        filename = f"model_swa_{epoch_start:04d}_{epoch_end:04d}_{update_bn_steps:04d}.model"
         torch.save(state_dict_swa,
                    self.model_dump_base / filename)

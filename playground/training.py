@@ -28,13 +28,30 @@ from data.paths import CMRxReconDatasetPath
               required=True,
               type=str,
               help='Path to the running configuration file')
+@click.option('-a', '--action',
+              multiple=True,
+              default=['train'],
+              help='Specify the trainer action, can be `train`, `validate` and `swa`.')
 @click.option('--disable-tqdm',
               'disable_tqdm',
               is_flag=True,
               default=False,
               help="Disable tqdm, you may want to do this when redirecting stdout to a file.")
-def train(split, dataset_config_path, running_config_path, disable_tqdm):
+@click.option('--disable-tracker',
+              'disable_tracker',
+              is_flag=True,
+              default=False,
+              help="Disable loss tracker (tensorboard summary writer or something similar.")
+def train(split,
+          dataset_config_path,
+          running_config_path,
+          action,
+          disable_tqdm,
+          disable_tracker):
     """The main function for training with command line interface."""
+    for a in action:
+        assert a.lower() in ('train', 'validate', 'swa'), f"Unknown action {a}"
+
     # get datapath handler
     data_path_handler = CMRxReconDatasetPath(dataset_config_path)
 
@@ -60,7 +77,7 @@ def train(split, dataset_config_path, running_config_path, disable_tqdm):
     trainer = QuantitativeMRITrainer(run_name=training_configs['run_name'],
                                      path_handler=data_path_handler,
                                      split=split,
-                                     disable_tracker=False,
+                                     disable_tracker=disable_tracker,
                                      disable_tqdm=disable_tqdm,
                                      recon_config=recon_config,
                                      ser_config=ser_config,
@@ -68,7 +85,13 @@ def train(split, dataset_config_path, running_config_path, disable_tqdm):
                                      training_config=trainer_config,
                                      tracker_config=tracking_config
                                      )
-    trainer.train()
+    if 'train' in action:
+        trainer.train()
+    if 'validate' in action:
+        trainer.validation()
+    if 'swa' in action:
+        # TODO: make epoch_start and epoch_end configurable!
+        trainer.stochastic_weight_averaging(epoch_start=150, epoch_end=200)
 
 
 if __name__ == '__main__':
