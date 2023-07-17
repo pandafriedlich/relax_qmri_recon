@@ -70,3 +70,14 @@ class TrainerConfig(BasicConfig):
 class TrainingTrackingConfig(BasicConfig):
     save_training_loss_every: int = 10  # in steps not epochs
     save_training_image_every: int = 500  # in steps not epochs
+
+
+@dataclasses.dataclass
+class PostTrainingValidationConfig(BasicConfig):
+    swa: bool = True                        # if SWA will be performed
+    swa_overwrite: bool = False             # if the old SWA results should be overwritten
+    swa_epoch_start: int = 150              # The first epoch number for SWA (inclusive).
+    swa_epoch_end: int = 200                # The last epoch number for SWA (exclusive).
+    swa_update_bn_steps: int = 100          # number of forward passes to update normalization layers
+    validate_with_swa: bool = True          # if the validation should be performed with the SWA weight.
+

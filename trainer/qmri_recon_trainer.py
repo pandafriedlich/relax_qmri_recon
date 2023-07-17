@@ -1,4 +1,6 @@
 import typing
+
+import joblib
 import torch
 import tqdm
 from pathlib import Path
@@ -22,6 +24,7 @@ from configuration.config import (TrainerConfig,
                                   ReconstructionBackboneConfig,
                                   SensitivityRefinementModuleConfig,
                                   DataSetConfiguration,
+                                  PostTrainingValidationConfig,
                                   TrainingTrackingConfig)
 from models.recurrentvarnet import RecurrentVarNet
 from models.tricathlon import QuantitativeMRIReconstructionNet
@@ -40,7 +43,8 @@ class QuantitativeMRITrainer(object):
                  ser_config: typing.Optional[SensitivityRefinementModuleConfig] = None,
                  data_set_config: typing.Optional[DataSetConfiguration] = None,
                  training_config: typing.Optional[TrainerConfig] = None,
-                 tracker_config: typing.Optional[TrainingTrackingConfig] = None
+                 tracker_config: typing.Optional[TrainingTrackingConfig] = None,
+                 post_training_config: typing.Optional[PostTrainingValidationConfig] = None
                  ) -> None:
         """
         Initialize the training object.
@@ -52,8 +56,9 @@ class QuantitativeMRITrainer(object):
         :param recon_config: Reconstruction network configuration, currently only RecurrentVarNet is supported.
         :param ser_config: Sensitivity estimation network configuration, currently only U-Net 2D is supported.
         :param data_set_config: Dataset loading configuration with attributes acceleration_factors and modality.
-        :param training_config: Training configuration file.
-        :param tracker_config: Tracker configuration file.
+        :param training_config: Training configuration.
+        :param tracker_config: Tracker configuration.
+        :param post_training_config: Post training configuration.
         """
         self.run_name = run_name
         self.split: int = split
@@ -67,6 +72,7 @@ class QuantitativeMRITrainer(object):
         self.training_config = TrainerConfig() if training_config is None else training_config
         self.tracker_config = TrainingTrackingConfig() if tracker_config is None else tracker_config
         self.dataset_config = DataSetConfiguration() if training_config is None else data_set_config
+        self.post_training_config = PostTrainingValidationConfig() if post_training_config is None else post_training_config
         self.save_optimizer_every = self.training_config.save_optimizer_factor * self.training_config.save_checkpoint_every
 
         # training status
@@ -292,10 +298,34 @@ class QuantitativeMRITrainer(object):
         """
         self.save_checkpoint("model_latest", save_optimizer=True)
 
-    def validation(self) -> None:
+    def validation(self, post_training=False, dump: bool = False) -> typing.Dict[str, typing.Any]:
         """
         Let's validate the results.
+        :param post_training: Indicates if it is a post-training validation.
+        :param dump: Indicates if the validation results should be dumped.
         """
+        if post_training:
+            # load model weights
+            if self.post_training_config.swa:
+                epoch_start, epoch_end, update_bn_steps = (self.post_training_config.swa_epoch_start,
+                                                           self.post_training_config.swa_epoch_end,
+                                                           self.post_training_config.swa_update_bn_steps)
+                swa_filename = f"model_swa_{epoch_start:04d}_{epoch_end:04d}_{update_bn_steps:04d}.model"
+                swa_filepath = self.model_dump_base / swa_filename
+                if (swa_filepath.exists() and self.post_training_config.swa_overwrite) or (not swa_filepath.exists()):
+                    swa_state_dict = self.stochastic_weight_averaging(epoch_start=epoch_start, epoch_end=epoch_end,
+                                                                      update_bn_steps=update_bn_steps)
+                else:
+                    swa_state_dict = torch.load(swa_filepath)
+                self.epoch = -1
+                self.recon_model.load_state_dict(swa_state_dict['model'])
+                checkpoint_path = swa_filepath
+            else:
+                self.resume_latest()
+                checkpoint_path = self.model_dump_base / "model_latest.model"
+        else:
+            checkpoint_path = self.model_dump_base / f"epoch_{self.epoch:04d}.model"
+
         # keep the current mode and switch to evaluation mode
         model_status = self.recon_model.training
         self.recon_model.eval()
@@ -303,7 +333,7 @@ class QuantitativeMRITrainer(object):
         validation_losses['total'] = []
         pbar = tqdm.tqdm(self.validation_loader, disable=self.disable_tqdm)
         for ind, batch in enumerate(pbar):
-            pbar.set_description(f"Epoch: {self.epoch + 1} ")
+            pbar.set_description(f"Epoch: {self.epoch} ")
             prediction = self.recon_model(batch)
 
             # convert k-space to RSS image
@@ -332,6 +362,13 @@ class QuantitativeMRITrainer(object):
                 )
         self.recon_model.train(model_status)
 
+        if dump:
+            # dump validation results
+            filename = f"valid_epoch_{self.epoch:d}.dat"
+            filepath = self.validation_save_base / filename
+            joblib.dump(dict(checkpoint_path=checkpoint_path, validation_losses=validation_losses), filepath)
+        return validation_losses
+
     def resume_from_checkpoint(self, checkpoint: Path) -> None:
         """
         Resume training from a checkpoint.
@@ -355,13 +392,13 @@ class QuantitativeMRITrainer(object):
 
     def stochastic_weight_averaging(self, epoch_start: int,
                                     epoch_end: int,
-                                    update_bn_steps: int = 100) -> None:
+                                    update_bn_steps: int = 100) -> typing.Dict[str, typing.Any]:
         """
         Perform stochastic weight averaging (SWA) in the weight space. SWA can counteract the randomness introduced by stochastic gradient descent.
         :param epoch_start: The first epoch number for SWA.
         :param epoch_end: The last ending epoch number for SWA.
         :param update_bn_steps: Steps of forward passes for batch normalization buffer update.
-        :return: None
+        :return: The SWA dictionary.
         """
         weight_aver = dict()                                        # initialize the averaged weight.
         num_models_average: float = 0.                              # keep track of number of models that have been averaged.
@@ -381,7 +418,7 @@ class QuantitativeMRITrainer(object):
                     weight_aver[key] = w_aver_t
                 num_models_average += 1.
                 epoch_numbers_averaged.append(epoch)
-                pbar.set_description(f"Processing {epoch:4d}.")
+                pbar.set_description(f"SWA of epoch {epoch:4d}.")
             else:
                 pbar.set_description(f"Checkpoint {epoch:4d} not found!")
 
@@ -391,13 +428,14 @@ class QuantitativeMRITrainer(object):
         if update_bn_steps > 0:
             pbar = tqdm.tqdm(self.training_loader, disable=self.disable_tqdm)
             for ind, batch in enumerate(pbar):
-                pbar.set_description("Updating normalization layers ...")
+                pbar.set_description("SWA updating normalization layers ...")
                 self.recon_model(batch)
                 if ind >= (update_bn_steps - 1):
                     break
 
         # save swa weights
         state_dict_swa = dict(
+            epoch=-1,
             num_models_average=num_models_average,
             epoch_start=epoch_start,
             update_bn_steps=update_bn_steps,
@@ -408,3 +446,4 @@ class QuantitativeMRITrainer(object):
         filename = f"model_swa_{epoch_start:04d}_{epoch_end:04d}_{update_bn_steps:04d}.model"
         torch.save(state_dict_swa,
                    self.model_dump_base / filename)
+        return state_dict_swa
