@@ -182,7 +182,8 @@ class QuantitativeMRITrainer(object):
         Initialize the network weights from pretraining or Kaiming intialization.
         """
         if self.training_config.load_pretrained_weight is not None:
-            state_dict = torch.load(self.training_config.load_pretrained_weight)
+            pretrained = self.path_handler.pretrained_base / self.training_config.load_pretrained_weight
+            state_dict = torch.load(pretrained)["model"]
             self.recon_model.load_state_dict(state_dict, strict=True)
         else:
             mutils.kaiming_init_model(self.recon_model)
@@ -230,6 +231,8 @@ class QuantitativeMRITrainer(object):
                 self.optimizer.zero_grad()
                 # forward pass
                 prediction = self.recon_model(batch)
+                prediction['pred_kspace'] *= batch['scaling_factor'].cuda().float()
+                batch['full_kspace'] *= batch['scaling_factor']
 
                 # convert k-space to RSS image
                 pred_for_loss = mutils.get_rearranged_prediction(prediction, 'pred_kspace')

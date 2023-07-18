@@ -1,0 +1,63 @@
+Default:
+  # General configuration for all acceleration factors.
+  t1:
+    recon_backbone_config:
+      forward_operator: fft2
+      backward_operator: ifft2
+      in_channels: 18
+      num_steps: 6
+      recurrent_hidden_channels: 96
+      recurrent_num_layers: 4
+      no_parameter_sharing: True
+      learned_initializer: True
+      initializer_initialization: sense
+      initializer_channels: [ 32, 32, 64, 64 ]
+      initializer_dilations: [ 1, 1, 2, 4 ]
+      initializer_multiscale: 3
+      normalized: false
+    sensitivity_refinement_config:
+      in_channels: 18
+      out_channels: 18
+      num_filters: 8
+      num_pool_layers: 4
+      dropout_probability: 0.0
+    model_checkpoints:
+      run_name: 'all_acc_t1_cross_valid_5'
+      fold_0: ['latest', 190, 180]
+      fold_1: []
+      fold_2: []
+      fold_3: []
+      fold_4: []
+  t2:
+    recon_backbone_config:
+      forward_operator: fft2
+      backward_operator: ifft2
+      in_channels: 6
+      num_steps: 6
+      recurrent_hidden_channels: 96
+      recurrent_num_layers: 4
+      no_parameter_sharing: True
+      learned_initializer: True
+      initializer_initialization: sense
+      initializer_channels: [ 32, 32, 64, 64 ]
+      initializer_dilations: [ 1, 1, 2, 4 ]
+      initializer_multiscale: 3
+      normalized: false
+    sensitivity_refinement_config:
+      in_channels: 6
+      out_channels: 6
+      num_filters: 8
+      num_pool_layers: 4
+      dropout_probability: 0.0
+    model_checkpoints:
+      run_name: 'all_acc_t2_cross_valid_5'
+      fold_0: ['latest']
+      fold_1: ['latest']
+      fold_2: ['latest']
+      fold_3: ['latest']
+      fold_4: ['latest']
+
+# Specialized configuration for various acceleration factors
+AccFactor04: null
+AccFactor08: null
+AccFactor12: null
