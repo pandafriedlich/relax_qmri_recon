@@ -55,7 +55,7 @@ training_tracking_config:
 post_training_validation_config:
   swa: false
   swa_overwrite: false
-  swa_epoch_start: 150
+  swa_epoch_start: 180
   swa_epoch_end: 200
   swa_update_bn_steps: 100
   validate_with_swa: false
