@@ -145,7 +145,7 @@ class QuantitativeMRITrainer(object):
             if e < self.training_config.warm_up_epochs:
                 lr = self.training_config.warm_up_lr
             else:
-                lr = (1 - e / self.training_config.max_epochs) ** self.training_config.lr_decay
+                lr = self.training_config.lr_init * (1 - e / self.training_config.max_epochs) ** self.training_config.lr_decay
             return lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,
