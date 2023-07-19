@@ -37,7 +37,7 @@ def parse_inference_yaml(inference_file: typing.Union[str, bytes, os.PathLike]) 
             if m_config is None:
                 m_config = {}
             for key, val in m_config.items():                           # 'recon_backbone_config' etc.
-                configs[acc][modality][key] = val
+                configs[acc][modality][key].update(val)
     return configs
 
 
@@ -61,6 +61,8 @@ def get_checkpoints_paths(dump_base: typing.Union[str, bytes, os.PathLike],
                 filename = 'model_latest.model'
             elif isinstance(s, int):
                 filename = f'epoch_{s:04d}.model'
+            elif s.startswith('model_swa'):
+                filename = f'{s}.model'
             else:
                 raise ValueError(f"invalid checkpoint name: {s}")
             checkpoint_paths.append(dump_base / fold_name / "models" / filename)
