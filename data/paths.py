@@ -29,7 +29,7 @@ class CMRxReconDatasetPath:
         self.sliced_dataset_base = Path(basis_paths['sliced_dataset_base'])
         self.expr_dump_base = Path(basis_paths["expr_dump_base"])
         self.inference_dump_base = Path(basis_paths["inference_dump_base"])
-        self.pretrained_base = Path(basis_paths["pretrained_base"])
+        # self.pretrained_base = Path(basis_paths["pretrained_base"])
 
     @staticmethod
     def _get_sub_folder_path(base: Path, *args: typing.List[str]) -> Path:
