@@ -59,7 +59,7 @@ class TrainerConfig(BasicConfig):
     save_checkpoint_every: int = 10
     save_optimizer_factor: int = 2
     validation_every: int = 10
-    load_pretrained_weight: typing.Optional[typing.Union[str, bytes, os.PathLike]] = None
+    load_pretrained_weight: typing.Optional[typing.Optional[typing.Dict]] = None
     load_pretrained_latest: bool = False
     combined_loss_weight: typing.Dict[str, float] = \
         dataclasses.field(default_factory=
