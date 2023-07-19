@@ -51,7 +51,7 @@ def train(split,
           disable_tracker):
     """The main function for training with command line interface."""
     for a in action:
-        assert a.lower() in ('train', 'validate'), f"Unknown action {a}!"
+        assert a.lower() in ('train', 'validate', 'swa'), f"Unknown action {a}!"
 
     # get datapath handler
     data_path_handler = CMRxReconDatasetPath(dataset_config_path)
@@ -94,6 +94,8 @@ def train(split,
         trainer.train()
     if 'validate' in action:
         trainer.validation(post_training=True, dump=True)
+    if 'swa' in action:
+        trainer.stochastic_weight_averaging(160, 200, update_bn_steps=200)
 
 
 if __name__ == '__main__':
