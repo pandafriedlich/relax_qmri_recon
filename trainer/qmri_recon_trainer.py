@@ -139,9 +139,20 @@ class QuantitativeMRITrainer(object):
         # set up optimizers and lr_schedulers
         self.optimizer = torch.optim.Adam(self.recon_model.parameters(),
                                           lr=self.training_config.lr_init)
+
+        def lr_scheduling_epoch(e):
+            """lr scheduler function supporting warm-up"""
+            if e < self.training_config.warm_up_epochs:
+                lr = self.training_config.warm_up_lr
+            else:
+                lr = (1 - e / self.training_config.max_epochs) ** self.training_config.lr_decay
+            return lr
+
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,
-                                                           lr_lambda=lambda e: (
-                                                                                           1 - e / self.training_config.max_epochs) ** self.training_config.lr_decay)
+                                                           lr_lambda=lr_scheduling_epoch)
+
+        # TODO: make auto-mixed-precision configurable
+        self.grad_scaler = torch.cuda.amp.GradScaler()
 
         # 3. set up loss functions
         self.loss_functions = dict()
@@ -184,8 +195,12 @@ class QuantitativeMRITrainer(object):
         if self.training_config.load_pretrained_weight is not None:
             # Search for the pretrained model in the training dump base
             pretrained_config = self.training_config.load_pretrained_weight
+            strict = pretrained_config.get('strict', True)
             pretrained_base = self.path_handler.expr_dump_base / pretrained_config['pretrained_run_name']
-            pretrained_base = pretrained_base / f"fold_{pretrained_config['fold']}" / "models"
+            fold = pretrained_config['fold']
+            if fold == 'auto':
+                fold = self.fold
+            pretrained_base = pretrained_base / f"fold_{fold}" / "models"
             model_name = pretrained_config['model_checkpoint']
             if model_name == 'latest':
                 model_name = 'model_latest.model'
@@ -196,7 +211,7 @@ class QuantitativeMRITrainer(object):
             pretrained = pretrained_base / model_name
             assert pretrained.exists(), f"Cannot find pretrained model {pretrained}"
             state_dict = torch.load(pretrained)["model"]
-            self.recon_model.load_state_dict(state_dict, strict=True)
+            self.recon_model.load_state_dict(state_dict, strict=strict)
         else:
             mutils.kaiming_init_model(self.recon_model)
 
@@ -241,6 +256,9 @@ class QuantitativeMRITrainer(object):
             pbar = tqdm.tqdm(self.training_loader, disable=self.disable_tqdm)
             for ind, batch in enumerate(pbar):
                 self.optimizer.zero_grad()
+
+                # Mixed precision training
+                # with torch.autocast(device_type='cuda', dtype=torch.float16):
                 # forward pass
                 prediction = self.recon_model(batch)
                 prediction['pred_kspace'] *= batch['scaling_factor'].cuda().float()
@@ -257,13 +275,19 @@ class QuantitativeMRITrainer(object):
                 total_loss = loss_value_dict['total']
                 total_loss.backward()
                 self.optimizer.step()
+                # self.grad_scaler.scale(total_loss).backward()
+                # self.grad_scaler.unscale_(self.optimizer)
+                # torch.nn.utils.clip_grad_norm_(self.recon_model.parameters(), 2.)
+                # self.grad_scaler.step(self.optimizer)
+                # self.grad_scaler.update()
 
                 # record the losses
                 description_str = f'Epoch: {self.epoch + 1} '
                 self.global_step += 1
                 for k, l in loss_value_dict.items():
                     description_str += f'{k:s}: {l:.4f} '
-                    if self.global_step % self.tracker_config.save_training_loss_every == 0 and (not self.disable_tracker):
+                    if self.global_step % self.tracker_config.save_training_loss_every == 0 and (
+                    not self.disable_tracker):
                         self.training_tracker.add_scalar(f'loss/{k}', l.item(), self.global_step)
                 pbar.set_description(description_str)
 
@@ -281,6 +305,7 @@ class QuantitativeMRITrainer(object):
             self.save_latest_checkpoint()
             self.save_per_epoch()
             if self.epoch % self.training_config.validation_every == 0:
+                torch.cuda.empty_cache()
                 self.validation()
         self.training_tracker.flush()
         self.training_tracker.close()
@@ -348,8 +373,9 @@ class QuantitativeMRITrainer(object):
         validation_losses['total'] = []
         pbar = tqdm.tqdm(self.validation_loader, disable=self.disable_tqdm)
         for ind, batch in enumerate(pbar):
-            pbar.set_description(f"Epoch: {self.epoch} ")
-            prediction = self.recon_model(batch)
+            with torch.no_grad():
+                pbar.set_description(f"Epoch: {self.epoch} ")
+                prediction = self.recon_model(batch)
 
             # convert k-space to RSS image
             pred_for_loss = mutils.get_rearranged_prediction(prediction, 'pred_kspace')
@@ -391,7 +417,7 @@ class QuantitativeMRITrainer(object):
         :return: None
         """
         state_dict = torch.load(checkpoint)
-        self.epoch = state_dict['epoch'] + 1        # next epoch
+        self.epoch = state_dict['epoch'] + 1  # next epoch
         self.global_step = state_dict['epoch'] * self.training_steps_per_epoch
         self.recon_model.load_state_dict(state_dict['model'])
         optim_sd = state_dict.get('optimizer', None)
@@ -415,21 +441,22 @@ class QuantitativeMRITrainer(object):
         :param update_bn_steps: Steps of forward passes for batch normalization buffer update.
         :return: The SWA dictionary.
         """
-        weight_aver = dict()                                        # initialize the averaged weight.
-        num_models_average: float = 0.                              # keep track of number of models that have been averaged.
-        epoch_numbers_averaged = []                                 # keep track of epoch numbers that have been averaged.
+        weight_aver = dict()  # initialize the averaged weight.
+        num_models_average: float = 0.  # keep track of number of models that have been averaged.
+        epoch_numbers_averaged = []  # keep track of epoch numbers that have been averaged.
 
         # weight space averaging
         pbar = tqdm.tqdm(range(epoch_start, epoch_end), disable=self.disable_tqdm)
         for epoch in pbar:
             filename = f"epoch_{epoch:04d}.model"
-            filepath = self.model_dump_base / filename              # go through all the checkpoints
+            filepath = self.model_dump_base / filename  # go through all the checkpoints
             if filepath.exists():
                 weight_t = torch.load(filepath)['model']
                 for key, w_t in weight_t.items():
                     # SWA: w_aver[t] = w_aver[t-1] * n / (n + 1) + w_t / (n + 1)
                     w_aver_t_prev = weight_aver.get(key, 0.)
-                    w_aver_t = w_aver_t_prev * num_models_average / (num_models_average + 1.) + w_t / (num_models_average + 1.)
+                    w_aver_t = w_aver_t_prev * num_models_average / (num_models_average + 1.) + w_t / (
+                                num_models_average + 1.)
                     weight_aver[key] = w_aver_t
                 num_models_average += 1.
                 epoch_numbers_averaged.append(epoch)

@@ -55,6 +55,8 @@ class TrainerConfig(BasicConfig):
     weight_decay: float = 0.
     lr_decay: float = 0.9
     lr_init: float = 1e-3
+    warm_up_lr: float = 1e-3
+    warm_up_epochs: float = 2
     max_epochs: int = 1000
     save_checkpoint_every: int = 10
     save_optimizer_factor: int = 2

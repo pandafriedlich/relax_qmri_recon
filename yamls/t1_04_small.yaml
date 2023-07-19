@@ -36,14 +36,14 @@ trainer_config:
   dataloader_num_workers: 8
   weight_decay: 0.
   lr_decay: 0.9
-  lr_init: 0.0001
+  lr_init: 0.00001
   max_epochs: 200
   save_checkpoint_every: 1
   save_optimizer_factor: 2
   validation_every: 10
   load_pretrained_weight:
     pretrained_run_name: all_acc_t1_cross_valid_5
-    fold: 0
+    fold: 'auto'
     model_checkpoint: 'latest'
   load_pretrained_latest: false
   combined_loss_weight:
