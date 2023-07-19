@@ -1,6 +1,12 @@
+# The dataset base path
 dataset_base: "/home/yidongzhao/umbrella/ConvertedData/CMRxRecon/ChallengeData"
+
+# The raw dataset will be sliced into small files to accelerate IO during training.
 sliced_dataset_base: "/home/yidongzhao/barrel/Data/ConvertedData/CMRxRecon/ChallengeDataSliced"
+
+# The training checkpoints, logs will be dumped here.
 expr_dump_base: "/home/yidongzhao/umbrella/experiments_data/training/cmrxrecon"
+
+# The prediction files will be saved here
 inference_dump_base: "/home/yidongzhao/umbrella/experiments_data/test/cmrxrecon"
-pretrained_base: "/home/yidongzhao/umbrella/experiments_data/pretained_zoo"
 

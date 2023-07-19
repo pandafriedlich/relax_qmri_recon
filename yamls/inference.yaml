@@ -23,7 +23,7 @@ Default:
       dropout_probability: 0.0
     model_checkpoints:
       run_name: 'all_acc_t1_cross_valid_5'
-      fold_0: ['latest', 190, 180]
+      fold_0: ['latest', 190, 195, 180, 175, 170, 165, 160, 155, 150]
       fold_1: []
       fold_2: []
       fold_3: []
@@ -57,7 +57,18 @@ Default:
       fold_3: ['latest']
       fold_4: ['latest']
 
-# Specialized configuration for various acceleration factors
-AccFactor04: null
+# Specialized configuration for various acceleration factors, this will overwrite the default configuration.
+AccFactor04:
+    t2:
+      recon_backbone_config:
+        num_steps: 8
+        recurrent_hidden_channels: 128
+      model_checkpoints:
+        run_name: 'acc_04_t2_5_fold'
+        fold_0: ['latest']
+        fold_1: []
+        fold_2: []
+        fold_3: []
+        fold_4: []
 AccFactor08: null
 AccFactor12: null
