@@ -182,7 +182,19 @@ class QuantitativeMRITrainer(object):
         Initialize the network weights from pretraining or Kaiming intialization.
         """
         if self.training_config.load_pretrained_weight is not None:
-            pretrained = self.path_handler.pretrained_base / self.training_config.load_pretrained_weight
+            # Search for the pretrained model in the training dump base
+            pretrained_config = self.training_config.load_pretrained_latest
+            pretrained_base = self.path_handler.expr_dump_base / pretrained_config['load_pretrained_weight']
+            pretrained_base = pretrained_base / f"fold_{pretrained_config['split']}" /  "models"
+            model_name = self.training_config.load_pretrained_latest['model_checkpoint']
+            if model_name == 'latest':
+                model_name = 'model_latest.model'
+            elif isinstance(model_name, int):
+                model_name = f'epoch_{model_name}.model'
+            else:
+                model_name = f'{model_name}.model'
+            pretrained = pretrained_base / model_name
+            assert pretrained.exists(), f"Cannot find pretrained model {pretrained}"
             state_dict = torch.load(pretrained)["model"]
             self.recon_model.load_state_dict(state_dict, strict=True)
         else:
