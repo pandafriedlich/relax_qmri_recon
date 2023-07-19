@@ -36,7 +36,7 @@ import numpy as np
 
 class QuantitativeMRITrainer(object):
     def __init__(self, run_name: str, path_handler: CMRxReconDatasetPath,
-                 split: int = 0,
+                 fold: int = 0,
                  disable_tracker: bool = False,
                  disable_tqdm: bool = True,
                  recon_config: typing.Optional[ReconstructionBackboneConfig] = None,
@@ -50,7 +50,7 @@ class QuantitativeMRITrainer(object):
         Initialize the training object.
         :param run_name: Set a name for a certain training run.
         :param path_handler: Dataset path handler object, with which we can get raw/prepared dataset paths and training dump base paths.
-        :param split: Dataset split, integer number in [0, 5) for 5-fold cross validation.
+        :param fold: Dataset fold, integer number in [0, 5) for 5-fold cross validation.
         :param disable_tracker: Disable the training tracker.
         :param disable_tqdm: Disable the tqdm output.
         :param recon_config: Reconstruction network configuration, currently only RecurrentVarNet is supported.
@@ -61,7 +61,7 @@ class QuantitativeMRITrainer(object):
         :param post_training_config: Post training configuration.
         """
         self.run_name = run_name
-        self.split: int = split
+        self.fold: int = fold
         self.disable_tracker: bool = disable_tracker
         self.disable_tqdm: bool = disable_tqdm
         self.path_handler = path_handler
@@ -91,7 +91,7 @@ class QuantitativeMRITrainer(object):
                                                                      overwrite_split=False)
 
         # Now we have the list of file paths.
-        file_lists_dict = sliced_dataset_files.splits[self.split]
+        file_lists_dict = sliced_dataset_files.splits[self.fold]
         self.training_file_lists = file_lists_dict['training']
         self.validation_file_lists = file_lists_dict['validation']
 
@@ -157,7 +157,7 @@ class QuantitativeMRITrainer(object):
             self.loss_functions[loss_name] = loss_fn
 
         # 4. set-up paths
-        self.expr_dump_base = self.path_handler.get_dump_data_path(self.run_name, f"fold_{self.split}")
+        self.expr_dump_base = self.path_handler.get_dump_data_path(self.run_name, f"fold_{self.fold}")
         self.model_dump_base = self.expr_dump_base / "models"
         self.validation_save_base = self.expr_dump_base / "validation"
         self.model_log_base = self.expr_dump_base / "logs"
@@ -183,10 +183,10 @@ class QuantitativeMRITrainer(object):
         """
         if self.training_config.load_pretrained_weight is not None:
             # Search for the pretrained model in the training dump base
-            pretrained_config = self.training_config.load_pretrained_latest
-            pretrained_base = self.path_handler.expr_dump_base / pretrained_config['load_pretrained_weight']
-            pretrained_base = pretrained_base / f"fold_{pretrained_config['split']}" /  "models"
-            model_name = self.training_config.load_pretrained_latest['model_checkpoint']
+            pretrained_config = self.training_config.load_pretrained_weight
+            pretrained_base = self.path_handler.expr_dump_base / pretrained_config['pretrained_run_name']
+            pretrained_base = pretrained_base / f"fold_{pretrained_config['fold']}" / "models"
+            model_name = pretrained_config['model_checkpoint']
             if model_name == 'latest':
                 model_name = 'model_latest.model'
             elif isinstance(model_name, int):

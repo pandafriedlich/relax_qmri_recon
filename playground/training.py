@@ -11,11 +11,11 @@ from data.paths import CMRxReconDatasetPath
 
 
 @click.command()
-@click.option('-s',
-              '--split',
+@click.option('-f',
+              '--fold',
               default=0,
               type=int,
-              help='Perform training on the given split, valid values are integers in [0, 5)')
+              help='Perform training on the given fold, valid values are integers in [0, 5)')
 @click.option('-d',
               '--dataset-config',
               'dataset_config_path',
@@ -43,7 +43,7 @@ from data.paths import CMRxReconDatasetPath
               is_flag=True,
               default=False,
               help="Disable loss tracker (tensorboard summary writer or something similar.")
-def train(split,
+def train(fold,
           dataset_config_path,
           running_config_path,
           action,
@@ -80,7 +80,7 @@ def train(split,
 
     trainer = QuantitativeMRITrainer(run_name=training_configs['run_name'],
                                      path_handler=data_path_handler,
-                                     split=split,
+                                     fold=fold,
                                      disable_tracker=disable_tracker,
                                      disable_tqdm=disable_tqdm,
                                      recon_config=recon_config,

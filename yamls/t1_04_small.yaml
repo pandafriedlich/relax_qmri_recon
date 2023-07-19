@@ -42,7 +42,8 @@ trainer_config:
   save_optimizer_factor: 2
   validation_every: 10
   load_pretrained_weight:
-    pretrained_run_name: all_acc_t1_5_fold
+    pretrained_run_name: all_acc_t1_cross_valid_5
+    fold: 0
     model_checkpoint: 'latest'
   load_pretrained_latest: false
   combined_loss_weight:
