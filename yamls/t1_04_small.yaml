@@ -1,12 +1,12 @@
-run_name: acc_04_t1_5_fold
-description: "This training routine uses the T1map data with all acceleration factors with 5-fold cross validation."
+run_name: t1_04_small
+description: "T1-mapping reconstruction model for acceleration factor 4, small network."
 
 recon_backbone_config:
   forward_operator: fft2
   backward_operator: ifft2
   in_channels: 18
-  num_steps: 8
-  recurrent_hidden_channels: 128
+  num_steps: 6
+  recurrent_hidden_channels: 96
   recurrent_num_layers: 4
   no_parameter_sharing: True
   learned_initializer: True
@@ -32,11 +32,11 @@ dataset_config:
 
 
 trainer_config:
-  batch_size: 1
+  batch_size: 2
   dataloader_num_workers: 8
   weight_decay: 0.
   lr_decay: 0.9
-  lr_init: 0.001
+  lr_init: 0.0001
   max_epochs: 200
   save_checkpoint_every: 1
   save_optimizer_factor: 2
