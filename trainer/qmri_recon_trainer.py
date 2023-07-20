@@ -139,13 +139,12 @@ class QuantitativeMRITrainer(object):
         # set up optimizers and lr_schedulers
         self.optimizer = torch.optim.Adam(self.recon_model.parameters(),
                                           lr=self.training_config.lr_init)
-
         def lr_scheduling_epoch(e):
             """lr scheduler function supporting warm-up"""
             if e < self.training_config.warm_up_epochs:
-                lr = self.training_config.warm_up_lr
+                lr = self.training_config.warm_up_lr / self.training_config.lr_init
             else:
-                lr = self.training_config.lr_init * (1 - e / self.training_config.max_epochs) ** self.training_config.lr_decay
+                lr = (1. - e / self.training_config.max_epochs) ** self.training_config.lr_decay
             return lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,
@@ -282,7 +281,8 @@ class QuantitativeMRITrainer(object):
                 # self.grad_scaler.update()
 
                 # record the losses
-                description_str = f'Epoch: {self.epoch + 1} '
+                curr_lr = self.scheduler.get_last_lr()[0]
+                description_str = f'Epoch: {self.epoch + 1} LR: {curr_lr:.3e} ' 
                 self.global_step += 1
                 for k, l in loss_value_dict.items():
                     description_str += f'{k:s}: {l:.4f} '
