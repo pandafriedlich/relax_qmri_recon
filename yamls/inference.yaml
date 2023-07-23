@@ -59,13 +59,24 @@ Default:
 
 # Specialized configuration for various acceleration factors, this will overwrite the default configuration.
 AccFactor04:
+    t1:
+      recon_backbone_config:
+        num_steps: 14
+        recurrent_hidden_channels: 96
+      model_checkpoints:
+        run_name: 't1_04_small'
+        fold_0: ['latest']
+        fold_1: []
+        fold_2: []
+        fold_3: []
+        fold_4: []
     t2:
       recon_backbone_config:
-        num_steps: 8
+        num_steps: 10
         recurrent_hidden_channels: 128
       model_checkpoints:
-        run_name: 'acc_04_t2_5_fold'
-        fold_0: ['latest']
+        run_name: 't2_04_large_aug'
+        fold_0: ['latest' ]
         fold_1: []
         fold_2: []
         fold_3: []

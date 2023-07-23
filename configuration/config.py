@@ -83,3 +83,20 @@ class PostTrainingValidationConfig(BasicConfig):
     swa_update_bn_steps: int = 100          # number of forward passes to update normalization layers
     validate_with_swa: bool = True          # if the validation should be performed with the SWA weight.
 
+
+@dataclasses.dataclass
+class ImageDomainAugmentationConfig(BasicConfig):
+    rotation: float = 45.
+    translation: float = 0.10                   # 10% of image shape
+    shearing: float = 20.
+    scale_min: float = 0.7
+    scale_max: float = 1.4
+    contamination_max_rel: float = 0.1
+    p_affine: float = 0.2
+    p_flip: float = 0.2
+    p_new_mask: float = 0.2
+    p_contamination: float = 0.1
+    # augmentation scheduling
+    decay_factor: float = 0.5           # p_new = p_old * decay_factor, 1.0 for no decay
+    decay_every: int = 100              # decay after this many epochs
+

@@ -1,16 +1,11 @@
 import typing
-
 import joblib
 import torch
 import tqdm
 from pathlib import Path
 from torch.utils.data import DataLoader
-from direct.data.transforms import (complex_multiplication,
-                                    modulus,
-                                    conjugate,
-                                    ifft2,
-                                    fft2,
-                                    root_sum_of_squares)
+from direct.data.transforms import (ifft2,
+                                    fft2)
 import direct.functionals as direct_func
 from models.loss import SSIMLoss, NuclearNormLoss
 from direct.nn.unet.unet_2d import UnetModel2d
@@ -24,6 +19,7 @@ from configuration.config import (TrainerConfig,
                                   ReconstructionBackboneConfig,
                                   SensitivityRefinementModuleConfig,
                                   DataSetConfiguration,
+                                  ImageDomainAugmentationConfig,
                                   PostTrainingValidationConfig,
                                   TrainingTrackingConfig)
 from models.recurrentvarnet import RecurrentVarNet
@@ -42,6 +38,7 @@ class QuantitativeMRITrainer(object):
                  recon_config: typing.Optional[ReconstructionBackboneConfig] = None,
                  ser_config: typing.Optional[SensitivityRefinementModuleConfig] = None,
                  data_set_config: typing.Optional[DataSetConfiguration] = None,
+                 augmentation_config: typing.Optional[ImageDomainAugmentationConfig] = None,
                  training_config: typing.Optional[TrainerConfig] = None,
                  tracker_config: typing.Optional[TrainingTrackingConfig] = None,
                  post_training_config: typing.Optional[PostTrainingValidationConfig] = None
@@ -56,6 +53,7 @@ class QuantitativeMRITrainer(object):
         :param recon_config: Reconstruction network configuration, currently only RecurrentVarNet is supported.
         :param ser_config: Sensitivity estimation network configuration, currently only U-Net 2D is supported.
         :param data_set_config: Dataset loading configuration with attributes acceleration_factors and modality.
+        :param augmentation_config: Data augmentation configuration.
         :param training_config: Training configuration.
         :param tracker_config: Tracker configuration.
         :param post_training_config: Post training configuration.
@@ -72,6 +70,7 @@ class QuantitativeMRITrainer(object):
         self.training_config = TrainerConfig() if training_config is None else training_config
         self.tracker_config = TrainingTrackingConfig() if tracker_config is None else tracker_config
         self.dataset_config = DataSetConfiguration() if training_config is None else data_set_config
+        self.augment_config = ImageDomainAugmentationConfig() if augmentation_config is None else augmentation_config
         self.post_training_config = PostTrainingValidationConfig() if post_training_config is None else post_training_config
         self.save_optimizer_every = self.training_config.save_optimizer_factor * self.training_config.save_checkpoint_every
 
@@ -96,7 +95,7 @@ class QuantitativeMRITrainer(object):
         self.validation_file_lists = file_lists_dict['validation']
 
         # set up transforms to be performed on the raw data, create Dataset & DataLoader.
-        transforms = get_default_sliced_qmr_transform()
+        transforms = get_default_sliced_qmr_transform(self.augment_config)
         self.training_set = SlicedQuantitativeMRIDataset(*self.training_file_lists,
                                                          transforms=transforms)
         self.validation_set = SlicedQuantitativeMRIDataset(*self.validation_file_lists,
@@ -143,9 +142,9 @@ class QuantitativeMRITrainer(object):
         def lr_scheduling_epoch(e):
             """lr scheduler function supporting warm-up"""
             if e < self.training_config.warm_up_epochs:
-                lr = self.training_config.warm_up_lr
+                lr = self.training_config.warm_up_lr / self.training_config.lr_init
             else:
-                lr = self.training_config.lr_init * (1 - e / self.training_config.max_epochs) ** self.training_config.lr_decay
+                lr = (1. - e / self.training_config.max_epochs) ** self.training_config.lr_decay
             return lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,
@@ -159,6 +158,8 @@ class QuantitativeMRITrainer(object):
         for loss_name in self.training_config.combined_loss_weight.keys():
             if loss_name.lower() == 'nmse':
                 loss_fn = direct_func.nmse.NMSELoss()
+            elif loss_name.lower() == 'l1':
+                loss_fn = torch.nn.L1Loss(reduction='mean')
             elif loss_name.lower() == 'ssim':
                 loss_fn = SSIMLoss()
             elif loss_name.lower() == 'nuc':
@@ -187,6 +188,33 @@ class QuantitativeMRITrainer(object):
         self._initialize_network()
         if training_config.load_pretrained_latest:
             self.resume_latest()
+
+    def _update_augmentation_p(self) -> None:
+        """
+        Update augmentation probability during training.
+        """
+        decay_every = self.augment_config.decay_every
+        decay_factor = self.augment_config.decay_factor
+
+        if (self.epoch + 1) % decay_every == 0:
+            # decay
+            self.augment_config.p_contamination *= decay_factor
+            self.augment_config.p_new_mask *= decay_factor
+            self.augment_config.p_affine *= decay_factor
+            self.augment_config.p_flip *= decay_factor
+            self.augment_config.contamination_max_rel *= decay_factor
+
+            # new transforms for the dataset
+            transforms = get_default_sliced_qmr_transform(self.augment_config)
+            self.training_set.update_transforms(transforms)
+
+            # update training_loader
+            self.training_loader = DataLoader(self.training_set,
+                                          batch_size=self.training_config.batch_size,
+                                          shuffle=True,
+                                          num_workers=self.training_config.dataloader_num_workers,
+                                          pin_memory=True,
+                                          collate_fn=qmri_data_collate_fn)
 
     def _initialize_network(self):
         """
@@ -252,17 +280,19 @@ class QuantitativeMRITrainer(object):
         self.global_step = self.epoch * n_steps_per_epoch
 
         epoch_start = self.epoch
+        gradient_accumulation = 4
         for self.epoch in range(epoch_start, self.training_config.max_epochs):
             pbar = tqdm.tqdm(self.training_loader, disable=self.disable_tqdm)
-            for ind, batch in enumerate(pbar):
-                self.optimizer.zero_grad()
+            self.optimizer.zero_grad()
 
-                # Mixed precision training
-                # with torch.autocast(device_type='cuda', dtype=torch.float16):
-                # forward pass
+            for ind, batch in enumerate(pbar):
+                for key in batch.keys():
+                    if isinstance(batch[key], torch.Tensor):
+                        batch[key] = batch[key].cuda().float()
+
                 prediction = self.recon_model(batch)
-                prediction['pred_kspace'] *= batch['scaling_factor'].cuda().float()
-                batch['full_kspace'] *= batch['scaling_factor']
+                # prediction['pred_kspace'] *= batch['scaling_factor']
+                # batch['full_kspace'] *= batch['scaling_factor']
 
                 # convert k-space to RSS image
                 pred_for_loss = mutils.get_rearranged_prediction(prediction, 'pred_kspace')
@@ -274,18 +304,16 @@ class QuantitativeMRITrainer(object):
                 # backward pass
                 total_loss = loss_value_dict['total']
                 total_loss.backward()
-                self.optimizer.step()
-                # self.grad_scaler.scale(total_loss).backward()
-                # self.grad_scaler.unscale_(self.optimizer)
-                # torch.nn.utils.clip_grad_norm_(self.recon_model.parameters(), 2.)
-                # self.grad_scaler.step(self.optimizer)
-                # self.grad_scaler.update()
+                if ((ind + 1) % gradient_accumulation == 0) or (ind + 1 == len(self.training_loader)):
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
 
                 # record the losses
-                description_str = f'Epoch: {self.epoch + 1} '
+                curr_lr = self.scheduler.get_last_lr()[0]
+                description_str = f'Epoch: {self.epoch + 1} LR: {curr_lr:.3e} ' 
                 self.global_step += 1
                 for k, l in loss_value_dict.items():
-                    description_str += f'{k:s}: {l:.4f} '
+                    description_str += f'{k:s}: {l:.3e} '
                     if self.global_step % self.tracker_config.save_training_loss_every == 0 and (
                     not self.disable_tracker):
                         self.training_tracker.add_scalar(f'loss/{k}', l.item(), self.global_step)
@@ -301,14 +329,19 @@ class QuantitativeMRITrainer(object):
                     self.training_tracker.add_image("training/gt", grid_gt,
                                                     global_step=self.global_step)
 
-            self.scheduler.step(self.epoch)
-            self.save_latest_checkpoint()
-            self.save_per_epoch()
+            # end of epoch routines
+            self._update_augmentation_p()                       # decay augmentation p if applicable
+            self.scheduler.step(self.epoch)                     # lr update
+            self.save_latest_checkpoint()                       # save latest
+            self.save_per_epoch()                               # save checkpoint if applicable
+
+            # validation
             if self.epoch % self.training_config.validation_every == 0:
                 torch.cuda.empty_cache()
                 self.validation()
-        self.training_tracker.flush()
-        self.training_tracker.close()
+        if not self.disable_tracker:
+            self.training_tracker.flush()
+            self.training_tracker.close()
 
     def save_checkpoint(self, filename: str, save_optimizer: bool = False) -> None:
         """

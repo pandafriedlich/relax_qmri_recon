@@ -142,7 +142,7 @@ def get_rearranged_prediction(data: typing.Dict[str, typing.Any],
     :return: Expanded data.
     """
     k_space = data[kspace_key]                                              # (nb, nc, kx, ky, [nt], 2)
-    rss = root_sum_of_square_recon(k_space,
+    rss = root_sum_of_square_recon(k_space.float(),
                                    backward_operator=backward_operator,
                                    spatial_dim=spatial_dim,
                                    coil_dim=coil_dim, complex_dim=-1)       # (nb, kx, ky, [nt])

@@ -29,10 +29,12 @@ class QuantitativeMRIReconTester:
         self.save_base = path_handler.inference_dump_base / self.run_name
         self.test_configs = parse_inference_yaml(inference_file)
 
-    def run_inference_on_acceleration(self, acceleration: str = 'AccFactor04') -> None:
+    def run_inference_on_acceleration(self, acceleration: str = 'AccFactor04',
+                                      modality: typing.Tuple[str, ...] = ('t1', 't2')) -> None:
         """
         Run inference on data of a specific acceleration factor.
         :param acceleration: Can be one of ('AccFactor04', 'AccFactor08', 'AccFactor10').
+        :param modality: t1, t2 or both.
         :return: None
         """
         assert acceleration in ('AccFactor04', 'AccFactor08', 'AccFactor10'), f"Unknown acceleration {acceleration}"
@@ -42,12 +44,14 @@ class QuantitativeMRIReconTester:
         save_base.mkdir(exist_ok=True, parents=True)
 
         # Build-up t1 & t2 models
-        config_acc_t1 = config_acc['t1']
-        t1_models = build_models_from_config(dump_base=self.path_handler.expr_dump_base,
-                                             model_config=config_acc_t1)
-        config_acc_t2 = self.test_configs[acceleration]['t2']
-        t2_models = build_models_from_config(dump_base=self.path_handler.expr_dump_base,
-                                             model_config=config_acc_t2)
+        if 't1' in modality:
+            config_acc_t1 = config_acc['t1']
+            t1_models = build_models_from_config(dump_base=self.path_handler.expr_dump_base,
+                                                 model_config=config_acc_t1)
+        if 't2' in modality:
+            config_acc_t2 = self.test_configs[acceleration]['t2']
+            t2_models = build_models_from_config(dump_base=self.path_handler.expr_dump_base,
+                                                 model_config=config_acc_t2)
 
         # initialize test dataset
         test_set = QuantitativeMRIAccelerationXDataset(dataset_base,
@@ -60,20 +64,22 @@ class QuantitativeMRIReconTester:
             for sample in pbar:
                 pbar.set_description(f"Subject: {sample['path']}")
                 t1in, t2in = sample['t1'], sample['t2']
-                t1_pred = [ensemble_prediction(t1_models, d1) for d1 in t1in]
-                t1_pred_rss = [t1p['rss'].detach().cpu().numpy() for t1p in t1_pred]
-                t1_pred_rss = np.transpose(np.stack(t1_pred_rss, axis=-1),  # (kx, ky, nt, ns)
-                                           (0, 1, 3, 2))                    # (kx, ky, ns, nt)
-                t2_pred = [ensemble_prediction(t2_models, d2) for d2 in t2in]
-                t2_pred_rss = [t2p['rss'].detach().cpu().numpy() for t2p in t2_pred]
-                t2_pred_rss = np.transpose(np.stack(t2_pred_rss, axis=-1),  # (kx, ky, nt, ns)
-                                           (0, 1, 3, 2))                    # (kx, ky, ns, nt)
-
                 subject_save_base = save_base / sample['path']
                 subject_save_base.mkdir(exist_ok=True, parents=True)
-                savemat(subject_save_base / "T1map.mat",
-                        dict(img4ranking=t1_pred_rss),
-                        do_compression=True)
-                savemat(subject_save_base / "T2map.mat",
-                        dict(img4ranking=t2_pred_rss),
-                        do_compression=True)
+                if 't1' in modality:
+                    t1_pred = [ensemble_prediction(t1_models, d1) for d1 in t1in]
+                    t1_pred_rss = [t1p['rss'].detach().cpu().numpy() for t1p in t1_pred]
+                    t1_pred_rss = np.transpose(np.stack(t1_pred_rss, axis=-1),  # (kx, ky, nt, ns)
+                                               (0, 1, 3, 2))                    # (kx, ky, ns, nt)
+                    savemat(subject_save_base / "T1map.mat",
+                            dict(img4ranking=t1_pred_rss),
+                            do_compression=True)
+                if 't2' in modality:
+                    t2_pred = [ensemble_prediction(t2_models, d2) for d2 in t2in]
+                    t2_pred_rss = [t2p['rss'].detach().cpu().numpy() for t2p in t2_pred]
+                    t2_pred_rss = np.transpose(np.stack(t2_pred_rss, axis=-1),  # (kx, ky, nt, ns)
+                                               (0, 1, 3, 2))                    # (kx, ky, ns, nt)
+
+                    savemat(subject_save_base / "T2map.mat",
+                            dict(img4ranking=t2_pred_rss),
+                            do_compression=True)
