@@ -3,6 +3,8 @@ from direct.data import transforms as dtrans
 from direct.data import mri_transforms as mtrans
 import typing
 from torchvision.transforms import Compose
+from configuration.config import ImageDomainAugmentationConfig
+from .augmentation import ImageDomainAugmentation
 
 
 class ToTensor(object):
@@ -150,25 +152,52 @@ class NormalizeKSpaceTransform:
         :param sample: Data sample.
         :return: Normalized sample.
         """
-        masked_kspace = sample['acc_kspace']                                # (nc, kx, ky, nt, 2)
+        masked_kspace = sample['acc_kspace']  # (nc, kx, ky, nt, 2)
         kspace_modulus = dtrans.modulus(masked_kspace,
-                                        complex_axis=self.complex_dim)      # (nc, kx, ky, nt)
-        kspace_modulus = kspace_modulus.view(-1)                            # (nc * kx * ky * nt)
-        amax = torch.quantile(kspace_modulus, self.percentile, dim=0)       # (1, )
-        amax = amax.view(1, 1, 1, 1, 1)    # (1, 1, 1, nt, 1)
+                                        complex_axis=self.complex_dim)  # (nc, kx, ky, nt)
+        kspace_modulus = kspace_modulus.view(-1)  # (nc * kx * ky * nt)
+        amax = torch.quantile(kspace_modulus, self.percentile, dim=0)  # (1, )
+        amax = amax.view(1, 1, 1, 1, 1)  # (1, 1, 1, nt, 1)
         sample['scaling_factor'] = amax
         for key in self.transform_keys:
             sample[key] = dtrans.safe_divide(sample[key], amax)
         return sample
 
 
-def get_default_sliced_qmr_transform():
+class EstimateGroundTruthImageTransform:
+    """
+    Perform inverse FFT on the fully sampled k-space data, and the reconstructed image will be used for image-domain augmentaion.
+    """
+
+    def __init__(self, groundtruth_key: str = 'full_kspace',
+                 backward_operator: typing.Callable = dtrans.ifft2,
+                 spatial_dim: typing.Tuple[int] = (1, 2)):
+        self.groundtruth_key = groundtruth_key
+        self.backward_operator = backward_operator
+        self.spatial_dim = spatial_dim
+
+    def __call__(self, sample: typing.Dict[str, torch.Tensor]):
+        """
+        Perform iFFT.
+        :param sample: A sample in the dataset.
+        :return: The sample with key `gt_image` for the iFFT results.
+        """
+        groundtruth_kspace = sample[self.groundtruth_key]
+        x = self.backward_operator(groundtruth_kspace, dim=self.spatial_dim)
+        sample['gt_image'] = x
+        return sample
+
+
+def get_default_sliced_qmr_transform(augmentation_config: ImageDomainAugmentationConfig):
     """
     Get default compose transform for sliced QMRI data.
+    :param augmentation_config: Augmentation configuration.
     :return: Composed transform.
     """
     transforms = Compose([ToTensor(keys=('acc_kspace', 'us_mask', 'acs_mask', 'full_kspace')),
                           ViewAsRealTransform(keys=('acc_kspace', 'us_mask', 'acs_mask', 'full_kspace')),
+                          EstimateGroundTruthImageTransform(),
+                          ImageDomainAugmentation(augmentation_config),
                           EstimateSensitivityTransform(),
                           NormalizeKSpaceTransform(keys=('acc_kspace', 'full_kspace'))
                           ])

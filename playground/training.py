@@ -5,6 +5,7 @@ from configuration.config import (TrainerConfig,
                                   ReconstructionBackboneConfig,
                                   SensitivityRefinementModuleConfig,
                                   DataSetConfiguration,
+                                  ImageDomainAugmentationConfig,
                                   PostTrainingValidationConfig)
 from trainer.qmri_recon_trainer import QuantitativeMRITrainer
 from data.paths import CMRxReconDatasetPath
@@ -68,6 +69,9 @@ def train(fold,
     dataset_config = DataSetConfiguration().update(
         training_configs['dataset_config']
     )
+    augmentation_config = ImageDomainAugmentationConfig().update(
+        training_configs['augmentation_config']
+    )
     trainer_config = TrainerConfig().update(
         training_configs['trainer_config']
     )
@@ -86,6 +90,7 @@ def train(fold,
                                      recon_config=recon_config,
                                      ser_config=ser_config,
                                      data_set_config=dataset_config,
+                                     augmentation_config=augmentation_config,
                                      training_config=trainer_config,
                                      tracker_config=tracking_config,
                                      post_training_config=post_training_config,

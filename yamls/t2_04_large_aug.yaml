@@ -1,12 +1,12 @@
-run_name: t1_04_small
-description: "T1-mapping reconstruction model for acceleration factor 4, small network."
+run_name: t2_04_large_aug
+description: "This training routine uses the T2map data, AccFactor04."
 
 recon_backbone_config:
   forward_operator: fft2
   backward_operator: ifft2
-  in_channels: 18
-  num_steps: 6
-  recurrent_hidden_channels: 96
+  in_channels: 6
+  num_steps: 10
+  recurrent_hidden_channels: 128
   recurrent_num_layers: 4
   no_parameter_sharing: True
   learned_initializer: True
@@ -18,8 +18,8 @@ recon_backbone_config:
 
 
 sensitivity_refinement_config:
-  in_channels: 18
-  out_channels: 18
+  in_channels: 6
+  out_channels: 6
   num_filters: 8
   num_pool_layers: 4
   dropout_probability: 0.0
@@ -27,27 +27,42 @@ sensitivity_refinement_config:
 
 dataset_config:
   acceleration_factors: [4.]
-  modality: t1map
+  modality: t2map
   overwrite_split: = false
 
 
+augmentation_config:
+  rotation: 45
+  translation: 0.10
+  shearing: 20
+  scale_min: 0.7
+  scale_max: 1.4
+  contamination_max_rel: 0.2
+  p_affine: 0.4
+  p_flip: 0.4
+  p_new_mask: 0.0
+  p_contamination: 0.2
+  decay_factor: 0.5
+  decay_every: 100
+
+
 trainer_config:
-  batch_size: 2
+  batch_size: 1
   dataloader_num_workers: 8
-  weight_decay: 0.
+  weight_decay: 0.0
   lr_decay: 0.9
-  lr_init: 0.00001
-  max_epochs: 200
+  lr_init: 0.001
+  warm_up_lr: 0.002
+  warm_up_epochs: 0
+  max_epochs: 400
   save_checkpoint_every: 1
   save_optimizer_factor: 2
   validation_every: 10
-  load_pretrained_weight:
-    pretrained_run_name: all_acc_t1_cross_valid_5
-    fold: 'auto'
-    model_checkpoint: 'latest'
+  load_pretrained_weight: null
   load_pretrained_latest: false
   combined_loss_weight:
-    nmse: 1.0
+    l1: 1.0
+    nmse: 0.0
     ssim: 1.0
 
 

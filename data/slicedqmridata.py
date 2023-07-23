@@ -15,6 +15,7 @@ class SlicedQuantitativeMRIDatasetListSplit:
     """
     List all the files of the preprocessed (sliced) dataset.
     """
+
     def __init__(self, dataset_base: typing.Union[str, bytes, os.PathLike],
                  acceleration_factors: typing.Tuple[Number, ...],
                  modalities: typing.Tuple[str, ...],
@@ -34,7 +35,7 @@ class SlicedQuantitativeMRIDatasetListSplit:
         self.modalities = modalities
         self.overwrite_split = overwrite_split
 
-        assert all([m.lower() in ('t1map', 't2map') for m in self.modalities]),\
+        assert all([m.lower() in ('t1map', 't2map') for m in self.modalities]), \
             f"Invalid modalities: {str(self.modalities)}! "
 
         self.ground_truth_folder = self.dataset_base / ACCELERATION_FOLDER_MAP[1.0]
@@ -107,7 +108,7 @@ class SlicedQuantitativeMRIDatasetListSplit:
         split_files = []
         for training_indices, valid_indices in splits:
             split_files.append(dict(training=([self.list_of_acc_files[ind] for ind in training_indices],
-                                                [self.list_of_gt_files[ind] for ind in training_indices]),
+                                              [self.list_of_gt_files[ind] for ind in training_indices]),
                                     validation=([self.list_of_acc_files[ind] for ind in valid_indices],
                                                 [self.list_of_gt_files[ind] for ind in valid_indices]),
                                     )
@@ -146,24 +147,32 @@ class SlicedQuantitativeMRIDataset(torch.utils.data.Dataset):
 
         # relaxation time vector, can be 'ti' fit T1 mapping or 'te' for T2 mapping.
         tvec = acc['ti'] if ti_in_keys else acc['te']
-        acc_kspace = acc['kspace']
+        acc_kspace = acc['kspace'] * 1000
         # acc_sensitivity = acc['senstivity']
         acc_under_sampling_mask = acc['us']
         acs_mask = get_acs_mask(acc_under_sampling_mask, half_bandwidth=12)
 
-        gt_kspace = gt['kspace']
+        gt_kspace = gt['kspace'] * 1000
         # sos_recon = gt['sos']
         sample = dict(tvec=tvec,
-                    acc_kspace=acc_kspace,              # (kx, ky, nc, nt)
-                    us_mask=acc_under_sampling_mask,    # (kx, ky)
-                    acs_mask=acs_mask,                  # (kx, ky)
-                    # init_sensitivity=acc_sensitivity,   # (kx, ky, nc, nt)
-                    full_kspace=gt_kspace,              # (kx, ky, nc, nt)
-                    # full_sos=sos_recon                  # (kx, ky, nt)
-                    )
+                      acc_kspace=acc_kspace,  # (kx, ky, nc, nt)
+                      us_mask=acc_under_sampling_mask,  # (kx, ky)
+                      acs_mask=acs_mask,  # (kx, ky)
+                      # init_sensitivity=acc_sensitivity,   # (kx, ky, nc, nt)
+                      full_kspace=gt_kspace,  # (kx, ky, nc, nt)
+                      # full_sos=sos_recon                  # (kx, ky, nt)
+                      )
         if self.transforms is not None:
             sample = self.transforms(sample)
         return sample
+
+    def update_transforms(self, new_transforms: typing.Callable) -> None:
+        """
+        Update transforms during training, this can be useful for augmentation probability decay.
+        :param new_transforms: New transforms.
+        :return: None
+        """
+        self.transforms = new_transforms
 
 
 def qmri_data_collate_fn(list_of_samples: typing.List[typing.Dict[str, typing.Any]]):
@@ -179,6 +188,3 @@ def qmri_data_collate_fn(list_of_samples: typing.List[typing.Dict[str, typing.An
         val = torch.stack(val, dim=0)
         batch[k] = val
     return batch
-
-
-
