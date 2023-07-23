@@ -117,8 +117,10 @@ def ensemble_prediction(models: typing.List[QuantitativeMRIReconstructionNet],
     def call_single_model(params, buffers, data):
         return torch.func.functional_call(base_model, (params, buffers), (data,))
     output = torch.vmap(call_single_model, (0, 0, None))(params, buffers, sample)
-    pred_kspace = (output['pred_kspace'].mean(dim=0) * sample['scaling_factor'].cuda().float()).squeeze(0)  # (nc, kx, ky, nt, 2)
+    pred_kspace = output['pred_kspace'].mean(dim=0).squeeze(0)                                              # (nc, kx, ky, nt, 2)
     rss = root_sum_of_square_recon(pred_kspace, ifft2, spatial_dim=(1, 2), coil_dim=0, complex_dim=-1)      # (kx, ky, nt)
+    rss = rss.double()
+    rss *= sample['scaling_factor'].cuda().double().squeeze()
     return dict(rss=rss)
 
 
