@@ -157,7 +157,7 @@ class NormalizeKSpaceTransform:
                                         complex_axis=self.complex_dim)  # (nc, kx, ky, nt)
         kspace_modulus = kspace_modulus.view(-1)  # (nc * kx * ky * nt)
         amax = torch.quantile(kspace_modulus, self.percentile, dim=0)  # (1, )
-        amax = amax.view(1, 1, 1, 1, 1)  # (1, 1, 1, nt, 1)
+        amax = amax.view(1, 1, 1, 1, 1)  # (1, 1, 1, 1, 1)
         sample['scaling_factor'] = amax
         for key in self.transform_keys:
             sample[key] = dtrans.safe_divide(sample[key], amax)

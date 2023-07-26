@@ -233,7 +233,7 @@ class QuantitativeMRITrainer(object):
             if model_name == 'latest':
                 model_name = 'model_latest.model'
             elif isinstance(model_name, int):
-                model_name = f'epoch_{model_name}.model'
+                model_name = f'epoch_{model_name:04d}.model'
             else:
                 model_name = f'{model_name}.model'
             pretrained = pretrained_base / model_name
