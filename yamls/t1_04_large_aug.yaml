@@ -37,12 +37,12 @@ augmentation_config:
   shearing: 20
   scale_min: 0.7
   scale_max: 1.4
-  contamination_max_rel: 0.1
+  contamination_max_rel: 0.05
   p_affine: 0.4
   p_flip: 0.4
   p_new_mask: 0.0
-  p_contamination: 0.2
-  decay_factor: 0.5
+  p_contamination: 0.05
+  decay_factor: 1.1
   decay_every: 100
 
 
