@@ -22,7 +22,7 @@ from configuration.config import (TrainerConfig,
                                   ImageDomainAugmentationConfig,
                                   PostTrainingValidationConfig,
                                   TrainingTrackingConfig)
-from models.recurrentvarnet import RecurrentVarNet
+from models.recurrentunet import RecurrentVarNet
 from models.tricathlon import QuantitativeMRIReconstructionNet
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
@@ -233,7 +233,7 @@ class QuantitativeMRITrainer(object):
             if model_name == 'latest':
                 model_name = 'model_latest.model'
             elif isinstance(model_name, int):
-                model_name = f'epoch_{model_name}.model'
+                model_name = f'epoch_{model_name:04d}.model'
             else:
                 model_name = f'{model_name}.model'
             pretrained = pretrained_base / model_name
@@ -336,7 +336,7 @@ class QuantitativeMRITrainer(object):
             self.save_per_epoch()                               # save checkpoint if applicable
 
             # validation
-            if self.epoch % self.training_config.validation_every == 0:
+            if (self.epoch + 1) % self.training_config.validation_every == 0:
                 torch.cuda.empty_cache()
                 self.validation()
         if not self.disable_tracker:

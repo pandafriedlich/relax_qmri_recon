@@ -1,0 +1,82 @@
+run_name: t2_04_tuning
+description: "This training routine uses the T2map data, AccFactor04."
+
+recon_backbone_config:
+  forward_operator: fft2
+  backward_operator: ifft2
+  in_channels: 6
+  num_steps: 10
+  recurrent_hidden_channels: 128
+  recurrent_num_layers: 4
+  no_parameter_sharing: True
+  learned_initializer: True
+  initializer_initialization: sense
+  initializer_channels: [32, 32, 64, 64]
+  initializer_dilations: [1, 1, 2, 4]
+  initializer_multiscale: 3
+  normalized: false
+
+
+sensitivity_refinement_config:
+  in_channels: 6
+  out_channels: 6
+  num_filters: 8
+  num_pool_layers: 4
+  dropout_probability: 0.0
+
+
+dataset_config:
+  acceleration_factors: [4.]
+  modality: t2map
+  overwrite_split: = false
+
+
+augmentation_config:
+  rotation: 60
+  translation: 0.15
+  shearing: 20
+  scale_min: 0.77
+  scale_max: 1.24
+  contamination_max_rel: 0.1
+  p_affine: 0.4
+  p_flip: 0.4
+  p_new_mask: 0.0
+  p_contamination: 0.1
+  decay_factor: 0.8
+  decay_every: 100
+
+
+trainer_config:
+  batch_size: 1
+  dataloader_num_workers: 8
+  weight_decay: 0.0
+  lr_decay: 0.9
+  lr_init: 0.0003
+  warm_up_lr: 0.002
+  warm_up_epochs: 0
+  max_epochs: 200
+  save_checkpoint_every: 1
+  save_optimizer_factor: 2
+  validation_every: 10
+  load_pretrained_weight:
+    pretrained_run_name: 't2_04_large_aug'
+    fold: 'auto'
+    model_checkpoint: 200
+  load_pretrained_latest: false
+  combined_loss_weight:
+    l1: 0.5
+    nmse: 0.0
+    ssim: 1.0
+
+
+training_tracking_config:
+  save_training_loss_every: 10
+  save_training_image_every: 500
+
+post_training_validation_config:
+  swa: false
+  swa_overwrite: false
+  swa_epoch_start: 180
+  swa_epoch_end: 200
+  swa_update_bn_steps: 100
+  validate_with_swa: false

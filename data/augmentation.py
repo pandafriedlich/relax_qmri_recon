@@ -99,8 +99,8 @@ class ImageDomainAugmentation:
         :param sample: A dictionary with the image reconstructed from the fully sampled k-space.
         :return: The same sample but images augmented in k-space.
         """
-        print(self.aug_config.p_affine,
-              self.contamination_max_rel)
+        # print(self.aug_config.p_affine,
+        #       self.contamination_max_rel)
         gt_image = sample[self.image_key]                       # (kc, kx, ky, kt, 2)
         gt_image = torch.permute(gt_image, (0, 3, 4, 1, 2))     # (kc, kt, 2, kx, ky)
         raw_shape = gt_image.shape
