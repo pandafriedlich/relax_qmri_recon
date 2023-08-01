@@ -23,11 +23,11 @@ module load miniconda3
 # set conda
 unset CONDA_SHLVL
 source "$(conda info --base)/etc/profile.d/conda.sh"
-export PYTHONPATH=/home/yidongzhao/scratch/workspace/qmri_recon
+export PYTHONPATH=$(realpath $(pwd)/..)
 
 # Job
 conda activate direct
-srun python training.py -s 2 -d ../yamls/cmrxrecon_dataset.yaml -r ../yamls/all_acc_t2_5_fold.yaml
+srun python training.py -f 0 -d ../yamls/cmrxrecon_dataset.yaml -r ../yamls/all_acc_t2_5_fold.yaml -a train
 
 
 # Measure GPU usage of your job (result)
