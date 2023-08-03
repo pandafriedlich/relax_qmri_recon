@@ -280,7 +280,7 @@ class QuantitativeMRITrainer(object):
         self.global_step = self.epoch * n_steps_per_epoch
 
         epoch_start = self.epoch
-        gradient_accumulation = 4
+        gradient_accumulation = 8
         for self.epoch in range(epoch_start, self.training_config.max_epochs):
             pbar = tqdm.tqdm(self.training_loader, disable=self.disable_tqdm)
             self.optimizer.zero_grad()
