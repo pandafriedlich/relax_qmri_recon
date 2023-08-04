@@ -188,3 +188,23 @@ def qmri_data_collate_fn(list_of_samples: typing.List[typing.Dict[str, typing.An
         val = torch.stack(val, dim=0)
         batch[k] = val
     return batch
+
+
+def qmri_data_robust_collate_fn(list_of_samples: typing.List[typing.Dict[str, typing.Any]]):
+    """
+    Customized collate function which stacks the samples along the batch axis (dim=0).
+    :param list_of_samples: List of samples
+    :return: Stacked batch
+    """
+    keys = list_of_samples[0].keys()
+    batch = dict()
+    for k in keys:
+        # relaxation times are sometimes empty for some unknown reasons. :)
+        val = [sample[k] for sample in list_of_samples
+               if sample['tvec'] is not None]
+        if len(val) > 0:
+            val = torch.stack(val, dim=0)
+        else:
+            val = None
+        batch[k] = val
+    return batch

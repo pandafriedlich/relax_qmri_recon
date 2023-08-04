@@ -1,0 +1,53 @@
+run_name: t1mapping_net
+description: "This training routine uses the T1map data, AccFactor04."
+
+
+mapping_network_config:
+  in_channels: 18
+  out_channels: 3
+  num_filters: 256
+  num_pool_layers: 1
+  dropout_probability: 0.0
+
+
+dataset_config:
+  acceleration_factors: [4.]
+  modality: t1map
+  overwrite_split: = false
+
+
+augmentation_config:
+  rotation: 45
+  translation: 0.10
+  shearing: 20
+  scale_min: 0.7
+  scale_max: 1.4
+  contamination_max_rel: 0.00
+  p_affine: 0.4
+  p_flip: 0.4
+  p_new_mask: 0.0
+  p_contamination: 0.00
+  decay_factor: 1.1
+  decay_every: 100
+
+
+trainer_config:
+  batch_size: 4
+  dataloader_num_workers: 4
+  weight_decay: 0.0
+  lr_decay: 0.9
+  lr_init: 0.0001
+  warm_up_lr: 0.002
+  warm_up_epochs: 0
+  max_epochs: 400
+  save_checkpoint_every: 20
+  save_optimizer_factor: 5
+  validation_every: 5
+  load_pretrained_weight: null
+  load_pretrained_latest: true
+  combined_loss_weight:
+    l1: 1.0
+
+training_tracking_config:
+  save_training_loss_every: 10
+  save_training_image_every: 100

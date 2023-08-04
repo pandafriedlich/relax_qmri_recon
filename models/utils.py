@@ -57,11 +57,11 @@ def root_sum_of_square_recon(y: torch.Tensor,
     :param complex_dim: complex real/imag dimension, default -1.
     :return: RSS reconstruction image of shape (..., kx, ky, ...), the coil dim and complex dim vanishes.
     """
-    x = backward_operator(y, dim=spatial_dim)                       # inverse FT
+    x = backward_operator(y, dim=spatial_dim)  # inverse FT
     # RSS transform
     rss = dtrans.root_sum_of_squares(x,
                                      dim=coil_dim,
-                                     complex_dim=complex_dim)       # (..., kx, ky, ...)
+                                     complex_dim=complex_dim)  # (..., kx, ky, ...)
     return rss
 
 
@@ -83,23 +83,23 @@ def refine_sensitivity_map(model: torch.nn.Module,
     :return: Refined sensitivity as a tensor of shape (nb, nc, kx, ky, [nt], 2).
     """
     if relax_dim is not None:
-        sensitivity = group_tensor_view(sensitivity)        # (nb, nc, kx, ky, 2 * nt)
+        sensitivity = group_tensor_view(sensitivity)  # (nb, nc, kx, ky, 2 * nt)
         channel_dim = relax_dim
     else:
         channel_dim = complex_dim
     sensitivity = torch.permute(sensitivity,
-                                (0, coil_dim, channel_dim, *spatial_dim)        # (nb, nc, 2 * nt, kx, ky)
+                                (0, coil_dim, channel_dim, *spatial_dim)  # (nb, nc, 2 * nt, kx, ky)
                                 )
     output = []
     for idx in range(sensitivity.shape[coil_dim]):
-        refined = model(sensitivity.select(coil_dim, idx))       # (0, #channel, kx, ky)
+        refined = model(sensitivity.select(coil_dim, idx))  # (0, #channel, kx, ky)
         output.append(refined)
     output = torch.stack(output, dim=coil_dim)
     output = output.permute((0, coil_dim,
                              output.ndim - 2,
                              output.ndim - 1,
                              2
-                             ))                                 # (nb, nc, kx, ky, nt * 2)
+                             ))  # (nb, nc, kx, ky, nt * 2)
     if relax_dim is not None:
         output = separate_tensor_view(output)
     output = normalize_sensitivity_map(output, coil_dim=coil_dim,
@@ -113,11 +113,13 @@ def kaiming_init_model(model: torch.nn.Module) -> torch.nn.Module:
     :param model: Model to be initialized.
     :return: The initialized model.
     """
+
     def _kaiming_normal_init(m):
         if isinstance(m, (torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Linear)):
             torch.nn.init.kaiming_normal_(m.weight.data, a=1e-2)
             if m.bias is not None:
                 torch.nn.init.zeros_(m.bias.data)
+
     model = model.apply(_kaiming_normal_init)
     return model
 
@@ -141,22 +143,22 @@ def get_rearranged_prediction(data: typing.Dict[str, typing.Any],
 
     :return: Expanded data.
     """
-    k_space = data[kspace_key]                                              # (nb, nc, kx, ky, [nt], 2)
+    k_space = data[kspace_key]  # (nb, nc, kx, ky, [nt], 2)
     rss = root_sum_of_square_recon(k_space.float(),
                                    backward_operator=backward_operator,
                                    spatial_dim=spatial_dim,
-                                   coil_dim=coil_dim, complex_dim=-1)       # (nb, kx, ky, [nt])
+                                   coil_dim=coil_dim, complex_dim=-1)  # (nb, kx, ky, [nt])
 
     # flatten if applicable
     if relax_dim is not None:
         k_space_dim = list(range(k_space.ndim))
         for dim in (coil_dim, k_space.ndim - 1):
-            k_space_dim.remove(dim)                                                         # coil_dim and complex_dim (-1) vanish after RSS
-        new_kspace_dim = sorted(range(len(k_space_dim)), key=k_space_dim.__getitem__)              # argsort
+            k_space_dim.remove(dim)  # coil_dim and complex_dim (-1) vanish after RSS
+        new_kspace_dim = sorted(range(len(k_space_dim)), key=k_space_dim.__getitem__)  # argsort
         old_to_new = {rd: nrd for rd, nrd in zip(k_space_dim, new_kspace_dim)}
         new_relax_dim = old_to_new[relax_dim]
         rss_flattened = (torch.movedim(rss, new_relax_dim, 1)
-                        .flatten(0, 1).unsqueeze(1))
+                         .flatten(0, 1).unsqueeze(1))
     else:
         rss_flattened = rss.unsqueeze(1)
 

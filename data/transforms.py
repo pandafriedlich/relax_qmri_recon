@@ -35,6 +35,13 @@ class ToTensor(object):
             if k.endswith('_mask'):  # Masks are of shape (1, kx, ky, 1)
                 val = val.unsqueeze(0).unsqueeze(-1)
             tensor_sample[k] = val
+        for k in ('tvec', ):
+            if sample[k] is not None:
+                val = torch.from_numpy(sample[k])
+                val = val.view(-1, 1, 1)
+            else:
+                val = None
+            tensor_sample[k] = val
         return tensor_sample
 
 

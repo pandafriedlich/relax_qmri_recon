@@ -42,6 +42,16 @@ class SensitivityRefinementModuleConfig(BasicConfig):
 
 
 @dataclasses.dataclass
+class MappingModuleConfig(BasicConfig):
+    frozen_weights: bool = False
+    in_channels: int = 18
+    out_channels: int = 3
+    num_filters: int = 64
+    num_pool_layers: int = 4
+    dropout_probability: int = 0.0
+
+
+@dataclasses.dataclass
 class DataSetConfiguration(BasicConfig):
     acceleration_factors: typing.Tuple[int] = (4., 8., 10.)
     modality: str = 't1map'
