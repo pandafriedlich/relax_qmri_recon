@@ -12,7 +12,7 @@ from direct.nn.unet.unet_2d import UnetModel2d
 import models.utils as mutils
 from data.slicedqmridata import (SlicedQuantitativeMRIDatasetListSplit,
                                  SlicedQuantitativeMRIDataset,
-                                 qmri_data_collate_fn)
+                                 qmri_data_robust_collate_fn)
 from data.paths import CMRxReconDatasetPath
 from data.transforms import get_default_sliced_qmr_transform
 from configuration.config import (TrainerConfig,
@@ -20,14 +20,18 @@ from configuration.config import (TrainerConfig,
                                   SensitivityRefinementModuleConfig,
                                   DataSetConfiguration,
                                   ImageDomainAugmentationConfig,
+                                  MappingModuleConfig,
                                   PostTrainingValidationConfig,
                                   TrainingTrackingConfig)
 from models.recurrentunet import RecurrentVarNet
-from models.tricathlon import QuantitativeMRIReconstructionNet
+from models.tricathlon import QuantitativeMRIReconstructionNet, MOLLIMappingNet, T2RelaxMappingNet
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 from dataclasses import asdict
 import numpy as np
+from .utils import make_heatmap_grid
+from models.loss import weighted_l1_loss
+freeze_mapping = True
 
 
 class QuantitativeMRITrainer(object):
@@ -37,6 +41,7 @@ class QuantitativeMRITrainer(object):
                  disable_tqdm: bool = True,
                  recon_config: typing.Optional[ReconstructionBackboneConfig] = None,
                  ser_config: typing.Optional[SensitivityRefinementModuleConfig] = None,
+                 map_config: typing.Optional[MappingModuleConfig] = None,
                  data_set_config: typing.Optional[DataSetConfiguration] = None,
                  augmentation_config: typing.Optional[ImageDomainAugmentationConfig] = None,
                  training_config: typing.Optional[TrainerConfig] = None,
@@ -67,6 +72,7 @@ class QuantitativeMRITrainer(object):
         # Configurable variables
         self.recon_model_config = ReconstructionBackboneConfig() if recon_config is None else recon_config
         self.sensitivity_model_config = SensitivityRefinementModuleConfig() if ser_config is None else ser_config
+        self.mapping_net_config = map_config
         self.training_config = TrainerConfig() if training_config is None else training_config
         self.tracker_config = TrainingTrackingConfig() if tracker_config is None else tracker_config
         self.dataset_config = DataSetConfiguration() if training_config is None else data_set_config
@@ -105,13 +111,13 @@ class QuantitativeMRITrainer(object):
                                           shuffle=True,
                                           num_workers=self.training_config.dataloader_num_workers,
                                           pin_memory=True,
-                                          collate_fn=qmri_data_collate_fn)
+                                          collate_fn=qmri_data_robust_collate_fn)
         self.validation_loader = DataLoader(self.validation_set,
                                             batch_size=1,
                                             shuffle=False,
                                             num_workers=self.training_config.dataloader_num_workers,
                                             pin_memory=True,
-                                            collate_fn=qmri_data_collate_fn
+                                            collate_fn=qmri_data_robust_collate_fn
                                             )
         self.training_steps_per_epoch = len(self.training_loader)
 
@@ -135,8 +141,22 @@ class QuantitativeMRITrainer(object):
         self.recon_model = QuantitativeMRIReconstructionNet(model,
                                                             additional_model)
 
+        # qMRI mapping models
+        self.mapping_model: typing.Union[MOLLIMappingNet, T2RelaxMappingNet, None] = None
+        if self.mapping_net_config is not None:
+            if self.dataset_config.modality == 't1map':
+                self.mapping_model = MOLLIMappingNet(**asdict(self.mapping_net_config))
+            elif self.dataset_config.modality == 't2map':
+                self.mapping_model = T2RelaxMappingNet(**asdict(self.mapping_net_config))
+            else:
+                raise ValueError("Modality unknown!")
+
         # set up optimizers and lr_schedulers
-        self.optimizer = torch.optim.Adam(self.recon_model.parameters(),
+        if self.mapping_model is not None and (not freeze_mapping):
+            params = list(self.mapping_model.parameters()) + list(self.recon_model.parameters())
+        else:
+            params = self.recon_model.parameters()
+        self.optimizer = torch.optim.Adam(params,
                                           lr=self.training_config.lr_init)
 
         def lr_scheduling_epoch(e):
@@ -150,9 +170,6 @@ class QuantitativeMRITrainer(object):
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,
                                                            lr_lambda=lr_scheduling_epoch)
 
-        # TODO: make auto-mixed-precision configurable
-        self.grad_scaler = torch.cuda.amp.GradScaler()
-
         # 3. set up loss functions
         self.loss_functions = dict()
         for loss_name in self.training_config.combined_loss_weight.keys():
@@ -164,6 +181,8 @@ class QuantitativeMRITrainer(object):
                 loss_fn = SSIMLoss()
             elif loss_name.lower() == 'nuc':
                 loss_fn = NuclearNormLoss()
+            elif loss_name.lower().startswith('map_'):
+                loss_fn = None
             else:
                 raise ValueError(f"Loss function with name {loss_name} is not supported yet!")
             self.loss_functions[loss_name] = loss_fn
@@ -214,34 +233,54 @@ class QuantitativeMRITrainer(object):
                                           shuffle=True,
                                           num_workers=self.training_config.dataloader_num_workers,
                                           pin_memory=True,
-                                          collate_fn=qmri_data_collate_fn)
+                                          collate_fn=qmri_data_robust_collate_fn)
+
+    def _load_local_weight(self, pretrained_config: typing.Dict[str, typing.Any], key: str='model') -> typing.Dict[str, torch.Tensor]:
+        """
+        Load weight from local checkpoint file.
+        :param pretrained_config: Dictionary containing run name, fold, and check point name.
+        :param key: The key to find the checkpoint, if not found, use 'model'.
+        :return: Network state dict.
+        """
+        pretrained_base = self.path_handler.expr_dump_base / pretrained_config['pretrained_run_name']
+        fold = pretrained_config['fold']
+        if fold == 'auto':
+            fold = self.fold
+        pretrained_base = pretrained_base / f"fold_{fold}" / "models"
+        model_name = pretrained_config['model_checkpoint']
+        if model_name == 'latest':
+            model_name = 'model_latest.model'
+        elif isinstance(model_name, int):
+            model_name = f'epoch_{model_name:04d}.model'
+        else:
+            model_name = f'{model_name}.model'
+        pretrained = pretrained_base / model_name
+        assert pretrained.exists(), f"Cannot find pretrained model {pretrained}"
+        # Load recon model
+        checkpoint = torch.load(pretrained, map_location='cuda')
+        if key in checkpoint.keys():
+            state_dict = checkpoint[key]
+        else:
+            state_dict = checkpoint['model']
+        return state_dict
 
     def _initialize_network(self):
         """
         Initialize the network weights from pretraining or Kaiming intialization.
         """
         if self.training_config.load_pretrained_weight is not None:
-            # Search for the pretrained model in the training dump base
+            self.recon_model.cuda().float()
             pretrained_config = self.training_config.load_pretrained_weight
-            strict = pretrained_config.get('strict', True)
-            pretrained_base = self.path_handler.expr_dump_base / pretrained_config['pretrained_run_name']
-            fold = pretrained_config['fold']
-            if fold == 'auto':
-                fold = self.fold
-            pretrained_base = pretrained_base / f"fold_{fold}" / "models"
-            model_name = pretrained_config['model_checkpoint']
-            if model_name == 'latest':
-                model_name = 'model_latest.model'
-            elif isinstance(model_name, int):
-                model_name = f'epoch_{model_name:04d}.model'
-            else:
-                model_name = f'{model_name}.model'
-            pretrained = pretrained_base / model_name
-            assert pretrained.exists(), f"Cannot find pretrained model {pretrained}"
-            state_dict = torch.load(pretrained)["model"]
-            self.recon_model.load_state_dict(state_dict, strict=strict)
+            state_dict = self._load_local_weight(pretrained_config, key='model')
+            self.recon_model.load_state_dict(state_dict, strict=pretrained_config.get('strict', True))
         else:
             mutils.kaiming_init_model(self.recon_model)
+
+        if self.mapping_model is not None and self.training_config.load_pretrained_mapping is not None:
+            self.mapping_model.cuda().float()
+            pretrained_config = self.training_config.load_pretrained_mapping
+            state_dict = self._load_local_weight(pretrained_config, key='mapping_model')
+            self.mapping_model.load_state_dict(state_dict, strict=pretrained_config.get('strict', True))
 
     def _compute_loss(self, pred: typing.Dict[str, torch.Tensor],
                       gt: typing.Dict[str, torch.Tensor]) -> typing.Dict[str, torch.Tensor]:
@@ -262,6 +301,8 @@ class QuantitativeMRITrainer(object):
                                    reduced=True)
             elif loss_name.lower() == 'nuc':
                 loss_val = loss_fn(pred['rss'])
+            elif loss_name.lower().startswith('map_'):
+                continue
             else:
                 loss_val = loss_fn(pred['rss'],
                                    gt['rss'].to(dtype=dt, device=dev))
@@ -269,6 +310,79 @@ class QuantitativeMRITrainer(object):
             loss_value_dict[loss_name] = loss_val
         loss_value_dict['total'] = total_loss
         return loss_value_dict
+
+    def _mapping_forward(self, image: torch.Tensor, t_relax: torch.Tensor) -> torch.Tensor:
+        """
+        Compute quantitative mapping prediction.
+        :param image: Input image of shape (nb, kt, kx, ky).
+        :param t_relax: Relaxation time  (nb, kt, 1, 1)
+        :return: Predicted parameter map.
+        """
+        t_relax = t_relax.expand(*image.shape)
+        net_input = torch.cat((t_relax, image), dim=1)
+        pmap = self.mapping_model(net_input)
+        return pmap
+
+    def _compute_pinn_loss(self, im: torch.Tensor, pmap: torch.Tensor, t_relax: torch.Tensor):
+        """
+        Compute the difference between signal predicted with the parameter map and the true signal, this is a special case of the Physics-informed Neural Network (PINN).
+        :param im: image of shape (nb, kt, kx, ky)
+        :param pmap: parameter map of shape (nb, #params, kx, ky)
+        :param t_relax: Expanded relaxation time (Ti or TE) of shape (nb, kt, kx, ky).
+        :return: The unsupervised PINN loss.
+        """
+        assert self.mapping_model is not None, "Mapping model is None!"
+        signal_pred = torch.abs(self.mapping_model.signal_model(t_relax, pmap))     # (nb, kt, kx, ky)
+        air = self.mapping_model.get_air_mask(im)
+        weight = 1. - air
+        loss_fn = weighted_l1_loss
+        weight = weight.expand(*signal_pred.shape).to(dtype=signal_pred.dtype,
+                                                      device=signal_pred.device)
+        loss = loss_fn(signal_pred, im, weight)
+        return loss
+
+    def _compute_mapping_related_loss(self, rss_pred: torch.Tensor,
+                                      rss_gt: torch.Tensor,
+                                      t_relax: torch.Tensor) -> typing.Dict[str, torch.Tensor]:
+        """
+        Compute relaxometry related losses.
+        :param rss_gt: Ground-truth magnitude image of shape (nb, kx, ky, kt).
+        :param rss_pred: Predicted magnitude image (nb, kx, ky, kt)
+        :param t_relax: Relaxation time vector (T_inv or T_echo) of shape (nb, kt, 1, 1)
+        :return: Dictionary of all loss items.
+        """
+        rss_gt = torch.permute(rss_gt, (0, 3, 1, 2))            # (nb, kt, kx, ky)
+        rss_pred = torch.permute(rss_pred, (0, 3, 1, 2))        # (nb, kt, kx, ky)
+        air_gt = self.mapping_model.get_air_mask(rss_gt)
+        air_pred = self.mapping_model.get_air_mask(rss_pred)
+
+        rss_gt = rss_gt.to(dtype=rss_pred.dtype, device=rss_pred.device)
+        t_relax = t_relax.to(dtype=rss_pred.dtype, device=rss_pred.device)
+
+        # unsupervised fitting loss for gt
+        pmap_gt = self._mapping_forward(rss_gt, t_relax)
+        pinn_gt = self._compute_pinn_loss(rss_gt, pmap_gt, t_relax)
+        Tx_map_gt = self.mapping_model.get_t_pred(pmap_gt)                          # (nb, 1, kx, ky)
+
+        # unsupervised fitting loss for prediction
+        pmap_pred = self._mapping_forward(rss_pred, t_relax)
+        pinn_pred = self._compute_pinn_loss(rss_pred, pmap_pred, t_relax)
+        Tx_map_pred = self.mapping_model.get_t_pred(pmap_pred)                      # (nb, 1, kx, ky)
+
+        # Mapping difference.
+        air = self.mapping_model.get_air_mask(rss_pred)
+        weight = 1. - air.expand(*Tx_map_pred.shape).to(device=rss_pred.device, dtype=rss_pred.dtype)
+        diff = weighted_l1_loss(Tx_map_pred, Tx_map_gt, weight)
+
+        return dict(map_pinn_gt=pinn_gt,            # The loss items starts with 'map_'
+                    map_pinn_pred=pinn_pred,
+                    map_tx_diff=diff,
+                    pmap_pred=pmap_pred,            # Below are intermediate variables
+                    pmap_gt=pmap_gt,
+                    air_pred=air_pred,
+                    air_gt=air_gt,
+                    tx_pred=Tx_map_pred,
+                    tx_gt=Tx_map_gt)
 
     def train(self) -> None:
         """
@@ -278,6 +392,7 @@ class QuantitativeMRITrainer(object):
         self.recon_model.train()
         n_steps_per_epoch = len(self.training_loader)
         self.global_step = self.epoch * n_steps_per_epoch
+
 
         epoch_start = self.epoch
         gradient_accumulation = 8
@@ -291,15 +406,26 @@ class QuantitativeMRITrainer(object):
                         batch[key] = batch[key].cuda().float()
 
                 prediction = self.recon_model(batch)
-                # prediction['pred_kspace'] *= batch['scaling_factor']
-                # batch['full_kspace'] *= batch['scaling_factor']
 
                 # convert k-space to RSS image
                 pred_for_loss = mutils.get_rearranged_prediction(prediction, 'pred_kspace')
                 full_for_loss = mutils.get_rearranged_prediction(batch, 'full_kspace')
 
-                # compute loss
+                # compute reconstruction loss
                 loss_value_dict = self._compute_loss(pred_for_loss, full_for_loss)
+
+                # mapping loss
+                if self.mapping_model is not None:
+                    t_relax = batch['tvec'] * 1e-3
+                    mapping_value_dict = self._compute_mapping_related_loss(pred_for_loss['rss'],
+                                                                            full_for_loss['rss'],
+                                                                            t_relax)
+                    for name, val in mapping_value_dict.items():
+                        if name.startswith('map_'):
+                            loss_value_dict[name] = val
+                            loss_value_dict['total'] += val * self.training_config.combined_loss_weight[name]
+                else:
+                    mapping_value_dict = dict()
 
                 # backward pass
                 total_loss = loss_value_dict['total']
@@ -313,13 +439,14 @@ class QuantitativeMRITrainer(object):
                 description_str = f'Epoch: {self.epoch + 1} LR: {curr_lr:.3e} ' 
                 self.global_step += 1
                 for k, l in loss_value_dict.items():
-                    description_str += f'{k:s}: {l:.3e} '
-                    if self.global_step % self.tracker_config.save_training_loss_every == 0 and (
-                    not self.disable_tracker):
+                    if k == 'total':
+                        description_str += f'{k:s}: {l:.3e} '
+                    if self.global_step % self.tracker_config.save_training_loss_every == 0 and (not self.disable_tracker):
                         self.training_tracker.add_scalar(f'loss/{k}', l.item(), self.global_step)
                 pbar.set_description(description_str)
 
                 if self.global_step % self.tracker_config.save_training_image_every == 0 and (not self.disable_tracker):
+                    # reconstruction
                     grid_gt = make_grid(full_for_loss['rss_flattened'], nrow=9,
                                         normalize=True, scale_each=True)
                     grid_pred = make_grid(pred_for_loss['rss_flattened'], nrow=9,
@@ -329,6 +456,22 @@ class QuantitativeMRITrainer(object):
                     self.training_tracker.add_image("training/gt", grid_gt,
                                                     global_step=self.global_step)
 
+                    # mapping
+                    if self.mapping_model is not None:
+                        cmap = {'t1map': 'jet', 't2map': 'plasma'}[self.dataset_config.modality]
+                        vmax = {'t1map': 2., 't2map': 0.12}[self.dataset_config.modality]
+                        grid_map_pred = make_heatmap_grid(mapping_value_dict['tx_pred'],
+                                                          air=mapping_value_dict['air_pred'],
+                                                          vmax=vmax, cmap=cmap)
+                        grid_map_gt = make_heatmap_grid(mapping_value_dict['tx_gt'],
+                                                        air=mapping_value_dict['air_gt'],
+                                                        vmax=vmax, cmap=cmap)
+                        self.training_tracker.add_image("training/pred_map", grid_map_pred,
+                                                        global_step=self.global_step)
+                        self.training_tracker.add_image("training/gt_map", grid_map_gt,
+                                                        global_step=self.global_step)
+
+
             # end of epoch routines
             self._update_augmentation_p()                       # decay augmentation p if applicable
             self.scheduler.step(self.epoch)                     # lr update
@@ -336,7 +479,7 @@ class QuantitativeMRITrainer(object):
             self.save_per_epoch()                               # save checkpoint if applicable
 
             # validation
-            if (self.epoch + 1) % self.training_config.validation_every == 0:
+            if (self.epoch) % self.training_config.validation_every == 0:
                 torch.cuda.empty_cache()
                 self.validation()
         if not self.disable_tracker:
@@ -351,6 +494,8 @@ class QuantitativeMRITrainer(object):
         """
         save_dict = dict(epoch=self.epoch,  # end of this epoch
                          model=self.recon_model.state_dict())
+        if self.mapping_model is not None:
+            save_dict['mapping_model'] = self.mapping_model.state_dict()
         if save_optimizer:
             save_dict['optimizer'] = self.optimizer.state_dict()
             save_dict['scheduler'] = self.scheduler.state_dict()
@@ -416,6 +561,17 @@ class QuantitativeMRITrainer(object):
 
             # compute loss
             loss_value_dict = self._compute_loss(pred_for_loss, full_for_loss)
+            if self.mapping_model is not None:
+                t_relax = batch['tvec'] * 1e-3
+                mapping_value_dict = self._compute_mapping_related_loss(pred_for_loss['rss'],
+                                                                        full_for_loss['rss'],
+                                                                        t_relax)
+                for name, val in mapping_value_dict.items():
+                    if name.startswith('map_'):
+                        loss_value_dict[name] = val
+                        loss_value_dict['total'] += val * self.training_config.combined_loss_weight[name]
+            else:
+                mapping_value_dict = dict()
             for k in validation_losses.keys():
                 validation_losses[k].append(loss_value_dict[k].item())
 
@@ -428,6 +584,20 @@ class QuantitativeMRITrainer(object):
                                                 global_step=self.global_step)
                 self.training_tracker.add_image("validation/gt", grid_gt,
                                                 global_step=self.global_step)
+                # mapping
+                if self.mapping_model is not None:
+                    cmap = {'t1map': 'jet', 't2map': 'plasma'}[self.dataset_config.modality]
+                    vmax = {'t1map': 2., 't2map': 0.12}[self.dataset_config.modality]
+                    grid_map_pred = make_heatmap_grid(mapping_value_dict['tx_pred'],
+                                                      air=mapping_value_dict['air_pred'],
+                                                      vmax=vmax, cmap=cmap)
+                    grid_map_gt = make_heatmap_grid(mapping_value_dict['tx_gt'],
+                                                    air=mapping_value_dict['air_gt'],
+                                                    vmax=vmax, cmap=cmap)
+                    self.training_tracker.add_image("validation/pred_map", grid_map_pred,
+                                                    global_step=self.global_step)
+                    self.training_tracker.add_image("validation/gt_map", grid_map_gt,
+                                                    global_step=self.global_step)
 
         if not self.disable_tracker:
             for k, l in validation_losses.items():
@@ -449,10 +619,14 @@ class QuantitativeMRITrainer(object):
         :param checkpoint: path to checkpoint.
         :return: None
         """
-        state_dict = torch.load(checkpoint)
+        self.recon_model.cuda().float()
+        state_dict = torch.load(checkpoint, map_location='cuda')
         self.epoch = state_dict['epoch'] + 1  # next epoch
         self.global_step = state_dict['epoch'] * self.training_steps_per_epoch
         self.recon_model.load_state_dict(state_dict['model'])
+        if self.mapping_model is not None and state_dict.get('mapping_model', None) is not None:
+            self.mapping_model.cuda().float()
+            self.mapping_model.load_state_dict(state_dict['mapping_model'])
         optim_sd = state_dict.get('optimizer', None)
         sched_sd = state_dict.get('scheduler', None)
         if optim_sd is not None:

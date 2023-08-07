@@ -77,6 +77,10 @@ class QuantitativeMappingSubjectData(SubjectData):
                                                         acceleration_factor=self.acceleration_factor)
         self.t1_map_t_inv = QuantitativeMappingSubjectData._load_inversion_time_csv(self.subject_base / "T1map.csv")
         self.t2_map_t_echo = QuantitativeMappingSubjectData._load_echo_time_csv(self.subject_base / "T2map.csv")
+        if self.t1_map_t_inv.size < 9:
+            print("Warning, Ti missing.")
+        if self.t2_map_t_echo.size < 3:
+            print("Warning, TE missing.")
         # self.t1_sos_recon = None
         # self.t2_sos_recon = None
         # self.t1_sensitivity = None

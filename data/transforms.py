@@ -36,7 +36,7 @@ class ToTensor(object):
                 val = val.unsqueeze(0).unsqueeze(-1)
             tensor_sample[k] = val
         for k in ('tvec', ):
-            if sample[k] is not None:
+            if sample.get(k, None) is not None:
                 val = torch.from_numpy(sample[k])
                 val = val.view(-1, 1, 1)
             else:

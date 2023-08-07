@@ -79,3 +79,14 @@ class NuclearNormLoss(nn.Module):
         x_flatten = x.flatten(*self.spatial_dim)                 # (nb, kx * ky, nt)
         nuc = torch.norm(x_flatten, p='nuc', dim=(-2, -1))      # (nb, )
         return nuc.mean()
+
+
+def weighted_l1_loss(pred: torch.Tensor, gt: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """
+    Compute weighted l1 loss.
+    :param pred: Prediction of arbitrary shape.
+    :param gt: Ground truth of the same shape as pred.
+    :param weight: Weight of the same shape as pred.
+    :return: Weighted mean L1 loss
+    """
+    return (weight * torch.abs((pred - gt))) .sum() / weight.sum()

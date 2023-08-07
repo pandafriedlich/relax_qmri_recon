@@ -8,18 +8,15 @@ import direct.data.transforms as dtrans
 
 class QuantitativeMRIReconstructionNet(torch.nn.Module):
     def __init__(self, recon_backbone: torch.nn.Module,
-                 sensitivity_net: typing.Optional[torch.nn.Module] = None,
-                 mapping_net: typing.Optional[torch.nn.Module] = None):
+                 sensitivity_net: typing.Optional[torch.nn.Module] = None):
         """
         Initialize the qMRI reconstruction net from backbone and SER.
         :param recon_backbone: Reconstruction backbone network.
         :param sensitivity_net: Sensitivity refinement network.
-        :param mapping_net: Mapping network
         """
         super().__init__()
         self.recon_net = recon_backbone
         self.sensitivity_net = sensitivity_net
-        self.mapping_net = mapping_net
 
     def forward(self,
                 data: typing.Dict[str, typing.Any]) -> typing.Dict[str, torch.Tensor]:
@@ -41,20 +38,9 @@ class QuantitativeMRIReconstructionNet(torch.nn.Module):
         pred_kspace = self.recon_net(masked_kspace,
                                      us_mask,
                                      sensitivity)
-        if self.mapping_net is not None:
-            rss = root_sum_of_square_recon(pred_kspace.float(),
-                                           backward_operator=dtrans.ifft2,
-                                           spatial_dim=(2, 3),
-                                           coil_dim=1,
-                                           complex_dim=-1)  # (nb, kx, ky, [nt])
-            rss = torch.permute(rss, (0, 3, 1, 2))
-            relaxation = self.mapping_net(rss)
-        else:
-            relaxation = None
 
         return dict(sensitivity=sensitivity,
-                    pred_kspace=pred_kspace,
-                    relaxation=relaxation)
+                    pred_kspace=pred_kspace)
 
 
 class MOLLIMappingNet(direct.nn.unet.unet_2d.UnetModel2d):
