@@ -5,6 +5,7 @@ from configuration.config import (TrainerConfig,
                                   ReconstructionBackboneConfig,
                                   SensitivityRefinementModuleConfig,
                                   DataSetConfiguration,
+                                  MappingModuleConfig,
                                   ImageDomainAugmentationConfig,
                                   PostTrainingValidationConfig)
 from trainer.qmri_recon_trainer import QuantitativeMRITrainer
@@ -66,6 +67,13 @@ def train(fold,
     ser_config = SensitivityRefinementModuleConfig().update(
         training_configs['sensitivity_refinement_config']
     )
+    if training_configs.get('mapping_network_config') is not None:
+        map_config = MappingModuleConfig().update(
+            training_configs['mapping_network_config']
+        )
+    else:
+        map_config = None
+
     dataset_config = DataSetConfiguration().update(
         training_configs['dataset_config']
     )
@@ -89,6 +97,7 @@ def train(fold,
                                      disable_tqdm=disable_tqdm,
                                      recon_config=recon_config,
                                      ser_config=ser_config,
+                                     map_config=map_config,
                                      data_set_config=dataset_config,
                                      augmentation_config=augmentation_config,
                                      training_config=trainer_config,
