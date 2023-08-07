@@ -392,7 +392,8 @@ class QuantitativeMRITrainer(object):
         self.recon_model.train()
         n_steps_per_epoch = len(self.training_loader)
         self.global_step = self.epoch * n_steps_per_epoch
-
+        if freeze_mapping and self.mapping_model is not None:
+            self.mapping_model.eval()
 
         epoch_start = self.epoch
         gradient_accumulation = 8
