@@ -1,10 +1,10 @@
-run_name: t2_10_relax
-description: "This training routine uses the T2map data, AccFactor10."
+run_name: t1_10_relax
+description: "This training routine uses the T1map data, AccFactor10."
 
 recon_backbone_config:
   forward_operator: fft2
   backward_operator: ifft2
-  in_channels: 6
+  in_channels: 18
   num_steps: 10
   recurrent_hidden_channels: 128
   recurrent_num_layers: 2
@@ -18,24 +18,25 @@ recon_backbone_config:
 
 
 sensitivity_refinement_config:
-  in_channels: 6
-  out_channels: 6
+  in_channels: 18
+  out_channels: 18
   num_filters: 64
   num_pool_layers: 4
   dropout_probability: 0.0
 
-
 mapping_network_config:
-  in_channels: 6
+  in_channels: 18
   out_channels: 3
   num_filters: 256
   num_pool_layers: 1
   dropout_probability: 0.0
 
+
 dataset_config:
   acceleration_factors: [10.]
-  modality: t2map
+  modality: t1map
   overwrite_split: = false
+
 
 augmentation_config:
   rotation: 45
@@ -43,11 +44,11 @@ augmentation_config:
   shearing: 20
   scale_min: 0.7
   scale_max: 1.4
-  contamination_max_rel: 0.2
+  contamination_max_rel: 0.15
   p_affine: 0.4
   p_flip: 0.4
   p_new_mask: 0.0
-  p_contamination: 0.2
+  p_contamination: 0.15
   decay_factor: 1.1
   decay_every: 100
 
@@ -67,9 +68,9 @@ trainer_config:
   frozen_mapping: true
   load_pretrained_weight: null
   load_pretrained_mapping:
-    pretrained_run_name: 't2mapping_net'
+    pretrained_run_name: 't1mapping_net'
     fold: 0
-    model_checkpoint: 'latest'
+    model_checkpoint: 1000
   load_pretrained_latest: false
   combined_loss_weight:
     l1: 0.16
@@ -80,10 +81,9 @@ trainer_config:
     map_tx_diff: 0.1
 
 
-
 training_tracking_config:
   save_training_loss_every: 10
-  save_training_image_every: 500
+  save_training_image_every: 100
 
 post_training_validation_config:
   swa: false

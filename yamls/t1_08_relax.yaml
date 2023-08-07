@@ -1,0 +1,94 @@
+run_name: t1_08_relax
+description: "This training routine uses the T1map data, AccFactor08."
+
+recon_backbone_config:
+  forward_operator: fft2
+  backward_operator: ifft2
+  in_channels: 18
+  num_steps: 10
+  recurrent_hidden_channels: 64
+  recurrent_num_layers: 4
+  no_parameter_sharing: true
+  learned_initializer: true
+  initializer_initialization: sense
+  initializer_channels: [32, 32, 64, 64]
+  initializer_dilations: [1, 1, 2, 4]
+  initializer_multiscale: 3
+  normalized: false
+
+
+sensitivity_refinement_config:
+  in_channels: 18
+  out_channels: 18
+  num_filters: 64
+  num_pool_layers: 4
+  dropout_probability: 0.0
+
+mapping_network_config:
+  in_channels: 18
+  out_channels: 3
+  num_filters: 256
+  num_pool_layers: 1
+  dropout_probability: 0.0
+
+
+dataset_config:
+  acceleration_factors: [10.]
+  modality: t1map
+  overwrite_split: = false
+
+
+augmentation_config:
+  rotation: 45
+  translation: 0.10
+  shearing: 20
+  scale_min: 0.7
+  scale_max: 1.4
+  contamination_max_rel: 0.2
+  p_affine: 0.4
+  p_flip: 0.4
+  p_new_mask: 0.0
+  p_contamination: 0.2
+  decay_factor: 1.1
+  decay_every: 100
+
+
+trainer_config:
+  batch_size: 1
+  dataloader_num_workers: 8
+  weight_decay: 0.0
+  lr_decay: 0.9
+  lr_init: 0.001
+  warm_up_lr: 0.002
+  warm_up_epochs: 0
+  max_epochs: 400
+  save_checkpoint_every: 20
+  save_optimizer_factor: 5
+  validation_every: 5
+  frozen_mapping: true
+  load_pretrained_weight: null
+  load_pretrained_mapping:
+    pretrained_run_name: 't1mapping_net'
+    fold: 0
+    model_checkpoint: 1000
+  load_pretrained_latest: false
+  combined_loss_weight:
+    l1: 0.16
+    nmse: 0.0
+    ssim: 0.84
+    map_pinn_gt: 0.01
+    map_pinn_pred: 0.01
+    map_tx_diff: 0.1
+
+
+training_tracking_config:
+  save_training_loss_every: 10
+  save_training_image_every: 100
+
+post_training_validation_config:
+  swa: false
+  swa_overwrite: false
+  swa_epoch_start: 180
+  swa_epoch_end: 200
+  swa_update_bn_steps: 100
+  validate_with_swa: false

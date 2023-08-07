@@ -4,7 +4,7 @@ import os
 import yaml
 from copy import deepcopy
 from pathlib import Path
-from models.recurrentvarnet import RecurrentVarNet
+from models.recurrentunet import RecurrentVarNet
 from direct.nn.unet import UnetModel2d
 from models.tricathlon import QuantitativeMRIReconstructionNet
 import torch

@@ -61,25 +61,47 @@ Default:
 AccFactor04:
     t1:
       recon_backbone_config:
-        num_steps: 14
-        recurrent_hidden_channels: 96
+        num_steps: 10
+        recurrent_hidden_channels: 64
+      sensitivity_refinement_config:
+        num_filters: 64
+
       model_checkpoints:
-        run_name: 't1_04_small'
+        run_name: 't1_04_fat'
+        fold_0: []
+        fold_1: []
+        fold_2: ['latest']
+        fold_3: []
+        fold_4: []
+
+AccFactor08:
+    t1:
+      recon_backbone_config:
+        num_steps: 12
+        recurrent_hidden_channels: 64
+      sensitivity_refinement_config:
+        num_filters: 64
+
+      model_checkpoints:
+        run_name: 't1_08_fat'
         fold_0: ['latest']
         fold_1: []
         fold_2: []
         fold_3: []
         fold_4: []
-    t2:
+
+AccFactor10:
+    t1:
       recon_backbone_config:
-        num_steps: 10
-        recurrent_hidden_channels: 128
+        num_steps: 12
+        recurrent_hidden_channels: 64
+      sensitivity_refinement_config:
+        num_filters: 64
+
       model_checkpoints:
-        run_name: 't2_04_large_aug'
-        fold_0: ['latest' ]
+        run_name: 't1_10_fat'
+        fold_0: [405]
         fold_1: []
         fold_2: []
         fold_3: []
         fold_4: []
-AccFactor08: null
-AccFactor12: null
