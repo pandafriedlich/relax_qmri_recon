@@ -140,8 +140,8 @@ AccFactor10:
 
       model_checkpoints:
         run_name: 't2_10_relax'
-        fold_0: ['latest']
-        fold_1: []
+        fold_0: []
+        fold_1: ['latest']
         fold_2: []
         fold_3: []
         fold_4: []

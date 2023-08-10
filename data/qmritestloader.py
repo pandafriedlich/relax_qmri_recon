@@ -34,12 +34,12 @@ class QuantitativeMRIAccelerationXDataset(Dataset):
         t1 = [dict(acc_kspace=subject_data.t1_map_kspace[:, :, :, s, :],
                    us_mask=subject_data.t1_us_mask,
                    acs_mask=get_acs_mask(subject_data.t1_us_mask),
-                   ti=subject_data.t1_map_t_inv)
+                   tvec=subject_data.t1_map_t_inv[s])
               for s in range(t1_n_slices)]
         t2 = [dict(acc_kspace=subject_data.t2_map_kspace[:, :, :, s, :],
                    us_mask=subject_data.t2_us_mask,
                    acs_mask=get_acs_mask(subject_data.t2_us_mask),
-                   te=subject_data.t2_map_t_echo)
+                   tvec=subject_data.t2_map_t_echo)
               for s in range(t2_n_slices)]
 
         # transforms

@@ -10,6 +10,7 @@ from models.tricathlon import QuantitativeMRIReconstructionNet
 import torch
 from direct.data.transforms import fft2, ifft2
 from models.utils import root_sum_of_square_recon
+from models.tricathlon import MOLLIMappingNet, T2RelaxMappingNet
 
 
 def parse_inference_yaml(inference_file: typing.Union[str, bytes, os.PathLike]) -> typing.Dict[
@@ -103,11 +104,13 @@ def build_models_from_config(dump_base: typing.Union[str, bytes, os.PathLike],
 
 
 def ensemble_prediction(models: typing.List[QuantitativeMRIReconstructionNet],
-                        sample: typing.Dict[str, typing.Any]):
+                        sample: typing.Dict[str, typing.Any],
+                        mapping_model: typing.Optional[typing.Union[MOLLIMappingNet, T2RelaxMappingNet]] = None):
     """
     Make ensemble prediction with vmap. Reference: https://pytorch.org/docs/stable/func.migrating.html
     :param models: List of models in ensemble.
     :param sample: Input to the model.
+    :param mapping_model: Mapping model.
     :return: Ensemble output.
     """
     base_model = copy.deepcopy(models[0])
@@ -119,8 +122,50 @@ def ensemble_prediction(models: typing.List[QuantitativeMRIReconstructionNet],
     output = torch.vmap(call_single_model, (0, 0, None))(params, buffers, sample)
     pred_kspace = output['pred_kspace'].mean(dim=0).squeeze(0)                                              # (nc, kx, ky, nt, 2)
     rss = root_sum_of_square_recon(pred_kspace, ifft2, spatial_dim=(1, 2), coil_dim=0, complex_dim=-1)      # (kx, ky, nt)
+    if mapping_model is not None:
+        map_pred = mapping_prediction(mapping_model, rss, sample['tvec'])
+    else:
+        map_pred = dict(pmap=None, air=None)
     rss = rss.double()
     rss *= sample['scaling_factor'].cuda().double().squeeze()
-    return dict(rss=rss)
+    return dict(rss=rss, pmap=map_pred['pmap'], air=map_pred['air'])
 
 
+def build_mapping_model(dump_base: typing.Union[str, bytes, os.PathLike],
+                        modality: str='t1') -> torch.nn.Module:
+    if modality == 't1':
+        model = MOLLIMappingNet(in_channels=18, out_channels=3,
+                                num_filters=256, num_pool_layers=1, dropout_probability=0.)
+        ckpt_path = get_checkpoints_paths(dump_base, dict(run_name='t1mapping_net',
+                                                          fold_0=[1000], fold_1=[],
+                                                          fold_2=[], fold_3=[],
+                                                          fold_4=[]))
+        checkpoint = torch.load(ckpt_path[0])
+        model.load_state_dict(checkpoint['mapping_model'])
+    elif modality == 't2':
+        model = T2RelaxMappingNet(in_channels=6, out_channels=3,
+                                num_filters=256, num_pool_layers=1, dropout_probability=0.)
+        ckpt_path = get_checkpoints_paths(dump_base, dict(run_name='t2mapping_net',
+                                                          fold_0=['latest'], fold_1=[],
+                                                          fold_2=[], fold_3=[],
+                                                          fold_4=[]))
+        checkpoint = torch.load(ckpt_path[0])
+        model.load_state_dict(checkpoint['model'])
+    else:
+        raise ValueError(f"Unknown modality {modality}!")
+
+    return model
+
+
+def mapping_prediction(model: typing.Union[MOLLIMappingNet, T2RelaxMappingNet],
+                       rss: torch.Tensor,
+                       t_relax: torch.Tensor):
+    model.cuda().float()
+    rss = torch.permute(rss, (2, 0, 1))[None, ...]         # (kx, ky, kt) -> (1, kt, kx, ky)
+    t_relax = t_relax.expand(*rss.shape) * 1e-3
+    rss = rss.cuda().float()
+    t_relax = t_relax.cuda().float()
+    x = torch.cat([t_relax, rss], dim=1)
+    pmap = model(x.cuda().float())
+    air = model.get_air_mask(rss)
+    return dict(pmap=pmap, air=air)

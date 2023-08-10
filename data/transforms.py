@@ -234,6 +234,7 @@ def get_default_raw_qmr_transform():
                           ViewAsRealTransform(keys=('acc_kspace', 'us_mask', 'acs_mask')),
                           EstimateSensitivityTransform(),
                           NormalizeKSpaceTransform(keys=('acc_kspace',)),
-                          ExpandBatchDimTransform(keys=('acc_kspace', 'us_mask', 'sensitivity', 'scaling_factor'))
+                          ExpandBatchDimTransform(keys=('acc_kspace', 'us_mask', 'sensitivity',
+                                                        'scaling_factor', 'tvec'))
                           ])
     return transforms

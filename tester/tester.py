@@ -1,6 +1,10 @@
 import typing
 import os
-from .utils import parse_inference_yaml, build_models_from_config, ensemble_prediction
+from .utils import (parse_inference_yaml,
+                    build_models_from_config,
+                    ensemble_prediction,
+                    mapping_prediction,
+                    build_mapping_model)
 import tqdm
 import torch
 import numpy as np
@@ -8,6 +12,7 @@ from scipy.io import savemat
 from data.paths import CMRxReconDatasetPath
 from data.qmritestloader import QuantitativeMRIAccelerationXDataset
 from data.transforms import get_default_raw_qmr_transform
+from models.tricathlon import MOLLIMappingNet, T2RelaxMappingNet
 
 
 # setup models
@@ -48,11 +53,14 @@ class QuantitativeMRIReconTester:
             config_acc_t1 = config_acc['t1']
             t1_models = build_models_from_config(dump_base=self.path_handler.expr_dump_base,
                                                  model_config=config_acc_t1)
+            t1mapping_model = build_mapping_model(dump_base=self.path_handler.expr_dump_base,
+                                                  modality='t1')
         if 't2' in modality:
             config_acc_t2 = self.test_configs[acceleration]['t2']
             t2_models = build_models_from_config(dump_base=self.path_handler.expr_dump_base,
                                                  model_config=config_acc_t2)
-
+            t2mapping_model = build_mapping_model(dump_base=self.path_handler.expr_dump_base,
+                                                  modality='t2')
         # initialize test dataset
         test_set = QuantitativeMRIAccelerationXDataset(dataset_base,
                                                        transforms=get_default_raw_qmr_transform())
@@ -67,19 +75,30 @@ class QuantitativeMRIReconTester:
                 subject_save_base = save_base / sample['path']
                 subject_save_base.mkdir(exist_ok=True, parents=True)
                 if 't1' in modality:
-                    t1_pred = [ensemble_prediction(t1_models, d1) for d1 in t1in]
+                    t1_pred = [ensemble_prediction(t1_models, d1, t1mapping_model) for d1 in t1in]
                     t1_pred_rss = [t1p['rss'].detach().cpu().numpy() for t1p in t1_pred]
+                    t1_pred_map = [t1p['pmap'].detach().cpu().numpy() for t1p in t1_pred]
+                    t1_air_map = [t1p['air'].detach().cpu().numpy() for t1p in t1_pred]
                     t1_pred_rss = np.transpose(np.stack(t1_pred_rss, axis=-1),  # (kx, ky, nt, ns)
                                                (0, 1, 3, 2))                    # (kx, ky, ns, nt)
+                    t1_pred_map = np.transpose(np.concatenate(t1_pred_map, axis=0),  # (kx, ky, 3, ns)
+                                               (0, 1, 3, 2))                    # (kx, ky, ns, 3)
+                    t1_air_map = np.transpose(np.concatenate(t1_air_map, axis=0),    # (kx, ky, 1, ns)
+                                              (0, 1, 3, 2))                     # (kx, ky, ns, 1)
                     savemat(subject_save_base / "T1map.mat",
-                            dict(img4ranking=t1_pred_rss),
+                            dict(img4ranking=t1_pred_rss, pmap=t1_pred_map, air=t1_air_map),
                             do_compression=True)
                 if 't2' in modality:
-                    t2_pred = [ensemble_prediction(t2_models, d2) for d2 in t2in]
+                    t2_pred = [ensemble_prediction(t2_models, d2, t2mapping_model) for d2 in t2in]
                     t2_pred_rss = [t2p['rss'].detach().cpu().numpy() for t2p in t2_pred]
+                    t2_pred_map = [t2p['pmap'].detach().cpu().numpy() for t2p in t2_pred]
+                    t2_air_map = [t2p['air'].detach().cpu().numpy() for t2p in t2_pred]
                     t2_pred_rss = np.transpose(np.stack(t2_pred_rss, axis=-1),  # (kx, ky, nt, ns)
                                                (0, 1, 3, 2))                    # (kx, ky, ns, nt)
-
+                    t2_pred_map = np.transpose(np.concatenate(t2_pred_map, axis=0),  # (kx, ky, 3, ns)
+                                               (0, 1, 3, 2))                    # (kx, ky, ns, 3)
+                    t2_air_map = np.transpose(np.concatenate(t2_air_map, axis=0),    # (kx, ky, 1, ns)
+                                              (0, 1, 3, 2))                     # (kx, ky, ns, 1)
                     savemat(subject_save_base / "T2map.mat",
-                            dict(img4ranking=t2_pred_rss),
+                            dict(img4ranking=t2_pred_rss, pmap=t2_pred_map, air=t2_air_map),
                             do_compression=True)

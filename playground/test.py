@@ -3,7 +3,7 @@ from data.paths import CMRxReconDatasetPath
 
 data_path_handler = CMRxReconDatasetPath("../yamls/cmrxrecon_dataset.yaml")
 
-tester = QuantitativeMRIReconTester('t1_10_noise',
+tester = QuantitativeMRIReconTester('dummy',
                                     data_path_handler,
                                     "../yamls/inference.yaml")
 tester.run_inference_on_acceleration('AccFactor10', modality='t1')
