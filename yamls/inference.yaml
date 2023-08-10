@@ -23,11 +23,11 @@ Default:
       dropout_probability: 0.0
     model_checkpoints:
       run_name: 'all_acc_t1_cross_valid_5'
-      fold_0: ['latest', 190, 195, 180, 175, 170, 165, 160, 155, 150]
-      fold_1: []
-      fold_2: []
-      fold_3: []
-      fold_4: []
+      fold_0: ['latest']
+      fold_1: ['latest']
+      fold_2: ['latest']
+      fold_3: ['latest']
+      fold_4: ['latest']
   t2:
     recon_backbone_config:
       forward_operator: fft2
@@ -69,23 +69,47 @@ AccFactor04:
       model_checkpoints:
         run_name: 't1_04_fat'
         fold_0: []
-        fold_1: []
+        fold_1: ['latest']
         fold_2: ['latest']
+        fold_3: []
+        fold_4: []
+    t2:
+      recon_backbone_config:
+        num_steps: 10
+        recurrent_hidden_channels: 128
+        recurrent_num_layers: 4
+      model_checkpoints:
+        run_name: 't2_04_large_aug'
+        fold_0: ['latest']
+        fold_1: ['latest']
+        fold_2: []
         fold_3: []
         fold_4: []
 
 AccFactor08:
     t1:
       recon_backbone_config:
-        num_steps: 12
-        recurrent_hidden_channels: 64
+        num_steps: 10
+        recurrent_hidden_channels: 128
+        recurrent_num_layers: 2
       sensitivity_refinement_config:
         num_filters: 64
-
       model_checkpoints:
-        run_name: 't1_08_fat'
+        run_name: 't1_08_relax'
         fold_0: ['latest']
         fold_1: []
+        fold_2: []
+        fold_3: []
+        fold_4: []
+    t2:
+      recon_backbone_config:
+        num_steps: 10
+        recurrent_hidden_channels: 128
+        recurrent_num_layers: 4
+      model_checkpoints:
+        run_name: 't2_08_large_aug'
+        fold_0: ['latest']
+        fold_1: ['latest']
         fold_2: []
         fold_3: []
         fold_4: []
@@ -93,14 +117,30 @@ AccFactor08:
 AccFactor10:
     t1:
       recon_backbone_config:
-        num_steps: 12
-        recurrent_hidden_channels: 64
+        num_steps: 10
+        recurrent_hidden_channels: 128
+        recurrent_num_layers: 2
       sensitivity_refinement_config:
         num_filters: 64
 
       model_checkpoints:
-        run_name: 't1_10_fat'
-        fold_0: [405]
+        run_name: 't1_10_relax'
+        fold_0: ['latest']
+        fold_1: []
+        fold_2: []
+        fold_3: []
+        fold_4: []
+    t2:
+      recon_backbone_config:
+        num_steps: 10
+        recurrent_hidden_channels: 128
+        recurrent_num_layers: 2
+      sensitivity_refinement_config:
+        num_filters: 64
+
+      model_checkpoints:
+        run_name: 't2_10_relax'
+        fold_0: ['latest']
         fold_1: []
         fold_2: []
         fold_3: []

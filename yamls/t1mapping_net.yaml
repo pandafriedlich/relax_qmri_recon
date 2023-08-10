@@ -43,7 +43,10 @@ trainer_config:
   save_checkpoint_every: 20
   save_optimizer_factor: 5
   validation_every: 5
-  load_pretrained_weight: null
+  load_pretrained_weight:
+    pretrained_run_name: t1mapping_net
+    fold: 'auto'
+    model_checkpoint: 1000
   load_pretrained_latest: true
   combined_loss_weight:
     l1: 1.0
