@@ -5,9 +5,9 @@ recon_backbone_config:
   forward_operator: fft2
   backward_operator: ifft2
   in_channels: 18
-  num_steps: 10
-  recurrent_hidden_channels: 256
-  recurrent_num_layers: 1
+  num_steps: 9
+  recurrent_hidden_channels: 192
+  recurrent_num_layers: 2
   no_parameter_sharing: true
   learned_initializer: true
   initializer_initialization: sense
