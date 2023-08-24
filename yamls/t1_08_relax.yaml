@@ -6,8 +6,8 @@ recon_backbone_config:
   backward_operator: ifft2
   in_channels: 18
   num_steps: 10
-  recurrent_hidden_channels: 64
-  recurrent_num_layers: 4
+  recurrent_hidden_channels: 256
+  recurrent_num_layers: 1
   no_parameter_sharing: true
   learned_initializer: true
   initializer_initialization: sense
@@ -33,22 +33,22 @@ mapping_network_config:
 
 
 dataset_config:
-  acceleration_factors: [10.]
+  acceleration_factors: [8.]
   modality: t1map
   overwrite_split: = false
 
 
 augmentation_config:
-  rotation: 45
-  translation: 0.10
+  rotation: 90
+  translation: 0.20
   shearing: 20
   scale_min: 0.7
   scale_max: 1.4
-  contamination_max_rel: 0.2
-  p_affine: 0.4
-  p_flip: 0.4
+  contamination_max_rel: 0.15
+  p_affine: 0.45
+  p_flip: 0.45
   p_new_mask: 0.0
-  p_contamination: 0.2
+  p_contamination: 0.15
   decay_factor: 1.1
   decay_every: 100
 
@@ -70,14 +70,14 @@ trainer_config:
   load_pretrained_mapping:
     pretrained_run_name: 't1mapping_net'
     fold: 0
-    model_checkpoint: 1000
+    model_checkpoint: 'latest'
   load_pretrained_latest: false
   combined_loss_weight:
-    l1: 0.16
-    nmse: 0.0
-    ssim: 0.84
-    map_pinn_gt: 0.01
-    map_pinn_pred: 0.01
+    l1: 0.5
+    nmse: 1.0
+    ssim: 0.5
+    map_pinn_gt: 0.00
+    map_pinn_pred: 0.05
     map_tx_diff: 0.1
 
 
