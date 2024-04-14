@@ -18,3 +18,20 @@ split=0 # 5-fold cross-validation, split can be 0-4
 running_config=../yamls/all_acc_t1_5_fold.yml
 python training.py -s 0 -r $running_config -a train 
 ```
+
+## Acknowledgment
+This project borrows code from the [NKI direct](https://github.com/NKI-AI/direct) project.
+
+## Cite this work 
+```bibtex
+@inproceedings{zhao2023relaxometry,
+  title={Relaxometry Guided Quantitative Cardiac Magnetic Resonance Image Reconstruction},
+  author={Zhao, Yidong and Zhang, Yi and Tao, Qian},
+  booktitle={International Workshop on Statistical Atlases and Computational Models of the Heart},
+  pages={349--358},
+  year={2023},
+  organization={Springer}
+}
+```
+
+
